@@ -1,30 +1,48 @@
 # Multi-Agent Debate v2
 
-基于 DeepSeek 的多智能体辩论与简历评审系统，支持：
+基于 DeepSeek API 的多智能体辩论与简历评审系统。  
+这个仓库已经是你在本地维护的 `multi-agent-debate-v2` 对应主仓库。
 
-- 多辩手自动辩论（真实 LLM 调用）
-- 主持人总结、裁判结论、用户接受/否决
-- 本机独立历史记录（不会共享给其他克隆用户）
-- 简历上传评审（PDF / DOCX / TXT / MD）
-- 自定义岗位模板（保存后可长期复用）
+## 你能用它做什么
+
+- 多智能体自动辩论（主持人/裁判/用户可参与裁决）
+- 辩论历史自动保存并可回看
+- 简历上传评审（支持 PDF / DOCX / TXT / MD）
+- 简历“仅解析文本”模式（先看解析结果再决定评审）
+- 岗位模板（预置 + 自定义 + 自动保存）
 
 ---
 
-## 1) 新手快速开始（5 分钟）
+## 0. 环境要求
 
-### 第一步：获取 DeepSeek API Key
+- Python 3.10+
+- Node.js 18+
+- npm 9+
+- 可用的 DeepSeek API Key
+
+---
+
+## 1. 从零启动（最清晰版本）
+
+### 1.1 获取 API Key（DeepSeek）
 
 1. 打开 [DeepSeek Platform](https://platform.deepseek.com/)
-2. 注册/登录账号
-3. 在 API Key 页面创建新密钥
-4. 复制密钥（只会完整显示一次）
+2. 登录后进入 API Key 管理页
+3. 创建 Key 并复制保存
 
-> 安全提醒：不要把 API Key 写进代码，也不要提交到 GitHub。
+> Key 只显示一次，丢失后请重新生成。  
+> 不要把真实 Key 提交到 GitHub。
 
-### 第二步：配置环境变量
+### 1.2 配置 `.env`
 
-在项目根目录复制一份配置文件：
+在项目根目录创建 `.env` 文件（可由 `.env.example` 复制）：
 
+**Windows (PowerShell)**
+```powershell
+Copy-Item .env.example .env
+```
+
+**macOS / Linux**
 ```bash
 cp .env.example .env
 ```
@@ -35,18 +53,20 @@ cp .env.example .env
 DEEPSEEK_API_KEY=your_real_key_here
 LLM_BASE_URL=https://api.deepseek.com/v1
 DEBATE_MODEL=deepseek-chat
-# 可选：自定义本机数据存储目录
+# 可选：自定义本机数据目录
 # DEBATE_APP_DATA_DIR=D:\debate-data
 ```
 
-### 第三步：启动后端
+### 1.3 启动后端
 
 ```bash
 pip install -r requirements.txt
 python -m uvicorn api:app --host 127.0.0.1 --port 8011
 ```
 
-### 第四步：启动前端
+看到 `Uvicorn running on http://127.0.0.1:8011` 说明后端成功。
+
+### 1.4 启动前端（新开一个终端）
 
 ```bash
 cd frontend
@@ -58,13 +78,30 @@ npm run dev -- --host 127.0.0.1 --port 3000
 
 ---
 
-## 2) Docker 部署（推荐给新手）
+## 2. 3 分钟自测（确认系统正常）
 
-### 2.1 准备 `.env`
+1. 首页点击“开始新辩论”
+2. 输入辩题，选择辩手，点击“开始辩论”
+3. 能看到逐条发言、裁判阶段结论、下一轮按钮
+4. 回到首页进入“简历多Agent评审”
+5. 拖入一份简历，先点“仅解析简历（先看内容）”
+6. 再选择岗位点“开始评审”
 
-仍然先创建并填写根目录 `.env`（至少要有 `DEEPSEEK_API_KEY`）。
+如果这 6 步都通，说明你的环境配置正确。
 
-### 2.2 启动
+---
+
+## 3. Docker 部署（可选）
+
+### 3.1 先准备 `.env`
+
+根目录必须有 `.env`，至少填入：
+
+```env
+DEEPSEEK_API_KEY=your_real_key_here
+```
+
+### 3.2 启动
 
 ```bash
 docker compose up --build
@@ -75,7 +112,7 @@ docker compose up --build
 - 前端：`http://127.0.0.1:3000`
 - 后端：`http://127.0.0.1:8000`
 
-### 2.3 停止
+### 3.3 停止
 
 ```bash
 docker compose down
@@ -83,81 +120,88 @@ docker compose down
 
 ---
 
-## 3) 功能说明
+## 4. 核心功能说明
 
-### 3.1 辩论模式
+### 辩论模式
 
-- 选择辩题与辩手后开始辩论
-- 支持多轮自动发言
-- 裁判会给出阶段结论
-- 用户可“接受结论并结束”或“否决并继续辩论”
+- 发起辩题 -> 多智能体轮流发言
+- 主持人总结、裁判判断是否继续辩论
+- 用户可接受结论或否决并继续
+- 历史记录可直接点开查看内容
 
-### 3.2 简历评审模式
+### 简历评审模式
 
-- 支持拖拽/选择简历文件
-- 支持“仅解析简历（先看文本）”
-- 支持按岗位触发多 Agent 评审
-- 自定义岗位可保存为模板，下次直接选
-
----
-
-## 4) API 一览（核心）
-
-- `GET /api/debaters`：辩手列表
-- `POST /api/debate/start`：创建辩论
-- `POST /api/debate/round`：执行一轮
-- `POST /api/debate/decision`：用户接受/否决结论
-- `GET /api/debate/sessions`：历史会话列表
-- `GET /api/debate/history/{session_id}`：会话详情
-
-- `GET /api/recruit/positions`：岗位列表（预设 + 自定义）
-- `POST /api/recruit/positions`：新增自定义岗位模板
-- `POST /api/recruit/parse`：仅解析简历文本
-- `POST /api/recruit/evaluate`：简历评审
-- `GET /api/recruit/evaluations`：评审历史
-- `GET /api/recruit/evaluations/{evaluation_id}`：评审详情
+- 文件上传方式：点击选择 + 拖拽上传
+- 支持“仅解析文本”
+- 支持岗位模板管理（预置岗位 + 自定义岗位）
+- 自定义岗位可自动保存，后续直接复用
 
 ---
 
-## 5) 数据与隐私
+## 5. API 速查
 
-默认数据保存到当前用户目录（本机私有）：
+### 辩论相关
+
+- `GET /api/debaters`
+- `POST /api/debate/start`
+- `POST /api/debate/round`
+- `POST /api/debate/decision`
+- `GET /api/debate/sessions`
+- `GET /api/debate/history/{session_id}`
+
+### 招聘评审相关
+
+- `GET /api/recruit/positions`
+- `POST /api/recruit/positions`
+- `POST /api/recruit/parse`
+- `POST /api/recruit/evaluate`
+- `GET /api/recruit/evaluations`
+- `GET /api/recruit/evaluations/{evaluation_id}`
+
+---
+
+## 6. 数据存储与隐私
+
+默认存储目录（每台机器独立）：
 
 - `~/.multi-agent-debate-v2/results`
 - `~/.multi-agent-debate-v2/resume_evaluations`
 - `~/.multi-agent-debate-v2/custom_positions.json`
 
-这意味着：
+结论：
 
-- 每个人只看到自己机器的数据
-- 克隆仓库不会带走他人历史记录
-
----
-
-## 6) 常见问题
-
-### Q1：页面没变化 / 功能像旧版本？
-
-- 强刷浏览器：`Ctrl + F5`
-- 确认前端连接的是正确后端端口（本项目默认本地开发 `8011`）
-- 若端口冲突，先关闭旧进程再重启
-
-### Q2：报 “缺少 API Key”？
-
-- 检查 `.env` 是否存在
-- 检查 `DEEPSEEK_API_KEY` 是否填写
-- 重启后端使新环境变量生效
-
-### Q3：`.doc` 无法解析？
-
-- `.doc` 默认不支持，请先转成 `.docx` 或 `.pdf`
-- 优先使用可复制文本 PDF（扫描件质量会影响效果）
+- 你只能看到你自己机器的数据
+- 克隆仓库不会带走他人的历史记录
 
 ---
 
-## 7) 安全规范（务必遵守）
+## 7. 常见问题（必看）
 
-- 不要把真实 `DEEPSEEK_API_KEY` 写入代码
-- 不要提交 `.env` 到 GitHub
-- 建议使用 `.env.example` 作为模板分发给团队
+### Q1：页面没变化，像旧版本
+
+- 浏览器强刷 `Ctrl + F5`
+- 确认前端地址是 `127.0.0.1:3000`
+- 确认后端地址是 `127.0.0.1:8011`（本地开发）
+
+### Q2：提示缺少 API Key
+
+- 检查根目录是否有 `.env`
+- 检查 `DEEPSEEK_API_KEY` 是否有值
+- 改完 `.env` 后重启后端
+
+### Q3：`.doc` 文件失败
+
+- `.doc` 不支持，请转成 `.docx` 或 `.pdf`
+
+### Q4：端口被占用
+
+- 改用新端口重启，或关闭旧进程后重启
+
+---
+
+## 8. 安全规范
+
+- 禁止硬编码真实 API Key
+- 禁止把 `.env` 提交到 GitHub
+- 使用 `.env.example` 作为配置模板分发
 

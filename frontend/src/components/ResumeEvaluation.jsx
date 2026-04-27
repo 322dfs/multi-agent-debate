@@ -402,9 +402,9 @@ function ResumeEvaluation({ onBack }) {
                   </p>
                 </div>
                 <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                  <p className="text-sm font-semibold text-dark">预览文本（前 60 行）</p>
-                  <pre className="mt-2 max-h-[420px] overflow-auto whitespace-pre-wrap text-xs leading-6 text-gray-700">
-                    {parseResult.preview_text || '未提取到文本内容'}
+                  <p className="text-sm font-semibold text-dark">完整解析文本</p>
+                  <pre className="mt-2 whitespace-pre-wrap text-xs leading-6 text-gray-700">
+                    {parseResult.parsed_text || '未提取到文本内容'}
                   </pre>
                 </div>
               </div>

@@ -701,13 +701,11 @@ async def parse_resume_only(resume_file: UploadFile = File(...)):
     raw_filename = resume_file.filename or f"resume_{uuid.uuid4().hex}.bin"
     resume_text = extract_resume_text(raw_filename, file_bytes)
     lines = [x.strip() for x in resume_text.splitlines() if x.strip()]
-    preview = "\n".join(lines[:60])
     return {
         "file_name": raw_filename,
         "char_count": len(resume_text),
         "line_count": len(lines),
-        "preview_text": preview,
-        "full_text": resume_text,
+        "parsed_text": resume_text,
     }
 
 

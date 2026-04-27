@@ -1,4 +1,5 @@
 .env
+.env.*
 results/
 *.db
 *.sqlite3

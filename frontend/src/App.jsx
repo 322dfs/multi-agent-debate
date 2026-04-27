@@ -43,7 +43,8 @@ function App() {
     }
 
     return (
-        <div className="min-h-screen font-sans">
+        <div className="relative min-h-screen font-sans overflow-hidden">
+            <div className="relative z-10">
             {step === 0 && (
                 <div className="min-h-screen bg-gradient-to-br from-light to-secondary/10 flex flex-col">
                     <div className="flex-1 flex items-center justify-center p-4">
@@ -97,6 +98,7 @@ function App() {
             {step === 3 && <DebateArena topic={topic} debaters={debaters} onReset={handleReset} />}
             {step === 4 && <ExamplePage onBack={handleBackFromExample} />}
             {step === 5 && <ResumeEvaluation onBack={handleBackFromExample} />}
+            </div>
         </div>
     )
 }

@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 from docx import Document
 from pypdf import PdfReader
 
+load_dotenv()
+
 BASE_DIR = Path(__file__).parent
 AGENTS_DIR = BASE_DIR / "agents"
 APP_DATA_DIR = Path(os.getenv("DEBATE_APP_DATA_DIR", Path.home() / ".multi-agent-debate-v2"))
@@ -23,11 +25,10 @@ RESUME_DIR = APP_DATA_DIR / "resumes"
 RESUME_DIR.mkdir(parents=True, exist_ok=True)
 RESUME_EVAL_DIR = APP_DATA_DIR / "resume_evaluations"
 RESUME_EVAL_DIR.mkdir(parents=True, exist_ok=True)
+CUSTOM_POSITIONS_FILE = APP_DATA_DIR / "custom_positions.json"
 
 MODEL_NAME = os.getenv("DEBATE_MODEL", "deepseek-chat")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1")
-
-load_dotenv()
 
 app = FastAPI(title="Multi Agent Debate API", version="2.0.0")
 
@@ -46,6 +47,11 @@ POSITION_PROFILES: Dict[str, Dict[str, Any]] = {
         "id": "embedded_software_engineer",
         "title": "嵌入式软件工程师 Embedded Software Engineer",
         "company": "上海孛璞半导体技术有限公司",
+        "responsibilities": [
+            "参与芯片配套固件与驱动方案设计，完成模块开发与联调",
+            "与硬件、测试团队协作定位板级与系统级问题",
+            "沉淀自动化测试脚本与故障复盘文档",
+        ],
         "must_have": [
             "C/C++ 扎实基础",
             "嵌入式 Linux 或 RTOS 开发经验",
@@ -62,6 +68,11 @@ POSITION_PROFILES: Dict[str, Dict[str, Any]] = {
         "id": "chip_test_engineer",
         "title": "芯片测试工程师 Chip Test Engineer",
         "company": "上海孛璞半导体技术有限公司",
+        "responsibilities": [
+            "负责芯片功能、性能与可靠性测试方案设计",
+            "搭建并维护实验室测试流程，输出可复用测试模板",
+            "针对异常数据进行定位分析并推动闭环",
+        ],
         "must_have": [
             "测试方案设计与执行能力",
             "数据分析与问题定位能力",
@@ -78,6 +89,11 @@ POSITION_PROFILES: Dict[str, Dict[str, Any]] = {
         "id": "silicon_photonics_engineer",
         "title": "硅光芯片工程师 Silicon Photonics Engineer",
         "company": "上海孛璞半导体技术有限公司",
+        "responsibilities": [
+            "参与硅光器件设计、仿真与实验验证",
+            "支持工艺/封装协同优化，推进器件量产可行性",
+            "沉淀仿真模型与测试数据分析报告",
+        ],
         "must_have": [
             "光电子/微电子相关理论基础",
             "器件或版图/工艺理解能力",
@@ -88,6 +104,69 @@ POSITION_PROFILES: Dict[str, Dict[str, Any]] = {
             "硅光、CPO、光互联相关项目经验",
             "跨学科协作能力（光学、电学、封装）",
             "论文/专利/竞赛成果",
+        ],
+    },
+    "it_system_engineer": {
+        "id": "it_system_engineer",
+        "title": "IT系统工程师 IT Systems Engineer",
+        "company": "上海孛璞半导体技术有限公司",
+        "responsibilities": [
+            "负责办公网络、终端、权限与基础系统稳定运行",
+            "建设并维护运维自动化脚本和监控告警机制",
+            "配合业务部门推进 IT 服务流程优化",
+        ],
+        "must_have": [
+            "熟悉 Windows/Linux 日常运维与故障排查",
+            "掌握网络基础（交换、路由、DNS、VPN）",
+            "具备脚本能力（Python/PowerShell/Shell 任一）",
+            "具备 IT 服务意识与跨部门沟通能力",
+        ],
+        "plus": [
+            "有 AD/域控、虚拟化或容器平台维护经验",
+            "有企业信息安全基线治理经验",
+            "有 ITIL 或运维流程体系经验",
+        ],
+    },
+    "hrbp_specialist": {
+        "id": "hrbp_specialist",
+        "title": "人力资源专员 HRBP Specialist",
+        "company": "上海孛璞半导体技术有限公司",
+        "responsibilities": [
+            "支撑招聘、入离职、试用期跟踪与人才盘点",
+            "推动绩效沟通与组织氛围建设",
+            "结合业务阶段输出人才策略建议",
+        ],
+        "must_have": [
+            "具备招聘与员工关系处理经验",
+            "具备结构化沟通与跨团队协作能力",
+            "熟悉劳动法规与基础人事流程",
+            "数据敏感度较好，能做基础人效分析",
+        ],
+        "plus": [
+            "有制造业/半导体行业 HR 经验",
+            "有组织发展或培训体系搭建经验",
+            "有中高端技术岗位招聘经验",
+        ],
+    },
+    "product_manager_it_tools": {
+        "id": "product_manager_it_tools",
+        "title": "内部工具产品经理 Product Manager (Internal Tools)",
+        "company": "上海孛璞半导体技术有限公司",
+        "responsibilities": [
+            "梳理研发与运营流程痛点，规划内部系统产品路线",
+            "产出 PRD、流程图与指标体系，推动上线迭代",
+            "协同研发、测试、业务做需求优先级管理",
+        ],
+        "must_have": [
+            "有 B 端产品经验与需求拆解能力",
+            "熟悉原型、流程与数据指标设计",
+            "具备跨部门推动能力与项目管理意识",
+            "能基于业务目标进行优先级决策",
+        ],
+        "plus": [
+            "有研发管理平台或企业协同系统经验",
+            "了解半导体研发或供应链流程",
+            "具备 SQL 或数据分析能力",
         ],
     },
 }
@@ -151,6 +230,14 @@ class DecisionRequest(BaseModel):
 class AutoDebateRequest(BaseModel):
     session_id: str
     max_rounds: int = 3
+
+
+class CustomPositionRequest(BaseModel):
+    title: str
+    company: str = "自定义岗位"
+    responsibilities: List[str] = []
+    must_have: List[str] = []
+    plus: List[str] = []
 
 
 def now_iso() -> str:
@@ -241,6 +328,51 @@ def parse_json_object(raw_text: str) -> Dict[str, Any]:
         if start != -1 and end != -1 and end > start:
             return json.loads(raw_text[start : end + 1])
     raise HTTPException(status_code=500, detail="模型返回格式解析失败，请重试。")
+
+
+def load_custom_positions() -> List[Dict[str, Any]]:
+    if not CUSTOM_POSITIONS_FILE.exists():
+        return []
+    with CUSTOM_POSITIONS_FILE.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data if isinstance(data, list) else []
+
+
+def save_custom_positions(items: List[Dict[str, Any]]) -> None:
+    with CUSTOM_POSITIONS_FILE.open("w", encoding="utf-8") as f:
+        json.dump(items, f, ensure_ascii=False, indent=2)
+
+
+def normalize_lines(raw: str) -> List[str]:
+    lines = [x.strip() for x in raw.replace("\r", "\n").split("\n")]
+    lines = [x for x in lines if x]
+    return lines
+
+
+def upsert_custom_position(item: Dict[str, Any]) -> Dict[str, Any]:
+    custom_positions = load_custom_positions()
+    title = (item.get("title") or "").strip()
+    company = (item.get("company") or "").strip()
+    for existing in custom_positions:
+        if (existing.get("title", "").strip() == title) and (existing.get("company", "").strip() == company):
+            existing["responsibilities"] = item.get("responsibilities", [])
+            existing["must_have"] = item.get("must_have", [])
+            existing["plus"] = item.get("plus", [])
+            existing["is_custom"] = True
+            save_custom_positions(custom_positions)
+            return existing
+    created = {
+        "id": f"custom_{uuid.uuid4().hex[:12]}",
+        "title": title or "自定义岗位",
+        "company": company or "自定义岗位",
+        "responsibilities": item.get("responsibilities", []),
+        "must_have": item.get("must_have", []),
+        "plus": item.get("plus", []),
+        "is_custom": True,
+    }
+    custom_positions.insert(0, created)
+    save_custom_positions(custom_positions)
+    return created
 
 
 def extract_resume_text(filename: str, file_bytes: bytes) -> str:
@@ -533,16 +665,99 @@ def get_debaters():
 
 @app.get("/api/recruit/positions")
 def list_recruit_positions():
-    return {"positions": list(POSITION_PROFILES.values())}
+    custom_items = load_custom_positions()
+    merged = list(POSITION_PROFILES.values()) + custom_items
+    return {"positions": merged}
+
+
+@app.post("/api/recruit/positions")
+def create_custom_position(payload: CustomPositionRequest):
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="岗位名称不能为空。")
+    must_have = [x.strip() for x in payload.must_have if x.strip()]
+    responsibilities = [x.strip() for x in payload.responsibilities if x.strip()]
+    plus = [x.strip() for x in payload.plus if x.strip()]
+    if not must_have:
+        raise HTTPException(status_code=400, detail="至少填写 1 条核心要求。")
+
+    item = upsert_custom_position(
+        {
+        "title": title,
+        "company": payload.company.strip() or "自定义岗位",
+        "responsibilities": responsibilities,
+        "must_have": must_have,
+        "plus": plus,
+        }
+    )
+    return item
+
+
+@app.post("/api/recruit/parse")
+async def parse_resume_only(resume_file: UploadFile = File(...)):
+    file_bytes = await resume_file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="上传文件为空。")
+    raw_filename = resume_file.filename or f"resume_{uuid.uuid4().hex}.bin"
+    resume_text = extract_resume_text(raw_filename, file_bytes)
+    lines = [x.strip() for x in resume_text.splitlines() if x.strip()]
+    preview = "\n".join(lines[:60])
+    return {
+        "file_name": raw_filename,
+        "char_count": len(resume_text),
+        "line_count": len(lines),
+        "preview_text": preview,
+        "full_text": resume_text,
+    }
 
 
 @app.post("/api/recruit/evaluate")
 async def evaluate_resume(
-    position_id: str = Form(...),
+    position_id: str = Form(""),
+    custom_position_title: str = Form(""),
+    custom_position_company: str = Form(""),
+    custom_position_responsibilities: str = Form(""),
+    custom_position_must_have: str = Form(""),
+    custom_position_plus: str = Form(""),
+    custom_position_save: str = Form("1"),
     resume_file: UploadFile = File(...),
 ):
-    if position_id not in POSITION_PROFILES:
-        raise HTTPException(status_code=400, detail="无效的岗位 ID。")
+    custom_positions = {x.get("id"): x for x in load_custom_positions() if x.get("id")}
+    selected_position = None
+    selected_position_id = ""
+    use_custom_input = bool(custom_position_title.strip() or custom_position_must_have.strip())
+    if use_custom_input:
+        must_have = normalize_lines(custom_position_must_have)
+        if not must_have:
+            raise HTTPException(status_code=400, detail="自定义岗位至少填写 1 条核心要求。")
+        custom_payload = {
+            "title": custom_position_title.strip() or "自定义岗位",
+            "company": custom_position_company.strip() or "自定义岗位",
+            "responsibilities": normalize_lines(custom_position_responsibilities),
+            "must_have": must_have,
+            "plus": normalize_lines(custom_position_plus),
+        }
+        should_save = custom_position_save.strip().lower() not in {"0", "false", "no"}
+        if should_save:
+            selected_position = upsert_custom_position(custom_payload)
+            selected_position_id = selected_position["id"]
+        else:
+            selected_position_id = f"custom_runtime_{uuid.uuid4().hex[:8]}"
+            selected_position = {
+                "id": selected_position_id,
+                **custom_payload,
+                "is_custom_runtime": True,
+            }
+    else:
+        if not position_id:
+            raise HTTPException(status_code=400, detail="请选择岗位或填写自定义岗位信息。")
+        if position_id in POSITION_PROFILES:
+            selected_position = POSITION_PROFILES[position_id]
+        elif position_id in custom_positions:
+            selected_position = custom_positions[position_id]
+        else:
+            raise HTTPException(status_code=400, detail="无效的岗位 ID。")
+        selected_position_id = position_id
 
     file_bytes = await resume_file.read()
     if not file_bytes:
@@ -554,7 +769,7 @@ async def evaluate_resume(
     saved_path.write_bytes(file_bytes)
 
     resume_text = extract_resume_text(raw_filename, file_bytes)
-    position = POSITION_PROFILES[position_id]
+    position = selected_position
 
     review_items = []
     for reviewer in RESUME_REVIEWERS:
@@ -580,7 +795,7 @@ async def evaluate_resume(
             "original_name": raw_filename,
             "saved_path": str(saved_path),
         },
-        "position_id": position_id,
+        "position_id": selected_position_id,
         "position": position,
         "reviews": review_items,
         "summary": summary,

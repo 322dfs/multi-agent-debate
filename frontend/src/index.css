@@ -23,3 +23,114 @@ body {
   min-height: 100vh;
   background-color: #f7fff7;
 }
+
+.debate-side-panel {
+  position: relative;
+  width: 180px;
+  min-height: 420px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  padding: 18px 14px;
+  overflow: hidden;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 20px 35px rgba(31, 41, 55, 0.14);
+}
+
+.debate-side-panel-left {
+  background: linear-gradient(180deg, rgba(255, 154, 194, 0.35), rgba(255, 255, 255, 0.72), rgba(255, 186, 214, 0.42));
+}
+
+.debate-side-panel-right {
+  background: linear-gradient(180deg, rgba(129, 230, 217, 0.4), rgba(255, 255, 255, 0.72), rgba(147, 197, 253, 0.42));
+}
+
+.debate-side-badge {
+  position: relative;
+  z-index: 2;
+  margin: 2px auto 8px;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #374151;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.debate-side-title {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #1f2937;
+  text-shadow: 0 4px 12px rgba(17, 24, 39, 0.15);
+}
+
+.debate-side-icons {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: 16px;
+  font-size: 28px;
+  text-align: center;
+}
+
+.debate-side-icons span {
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.58);
+  padding: 8px 0;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
+}
+
+.debate-side-tip {
+  position: relative;
+  z-index: 2;
+  margin-top: 16px;
+  text-align: center;
+  font-size: 11px;
+  color: rgba(31, 41, 55, 0.76);
+  line-height: 1.5;
+}
+
+.debate-side-orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(0.2px);
+}
+
+.debate-side-orb-a {
+  width: 110px;
+  height: 110px;
+  left: -28px;
+  top: -20px;
+  background: rgba(255, 99, 132, 0.3);
+}
+
+.debate-side-orb-b {
+  width: 86px;
+  height: 86px;
+  right: -22px;
+  bottom: 26px;
+  background: rgba(255, 205, 86, 0.28);
+}
+
+.debate-side-orb-c {
+  width: 108px;
+  height: 108px;
+  right: -24px;
+  top: -24px;
+  background: rgba(56, 189, 248, 0.3);
+}
+
+.debate-side-orb-d {
+  width: 92px;
+  height: 92px;
+  left: -20px;
+  bottom: 20px;
+  background: rgba(110, 231, 183, 0.3);
+}
+

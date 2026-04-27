@@ -1,0 +1,177 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Noto Sans SC', system-ui, sans-serif;
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%);
+  min-height: 100vh;
+  color: #f8fafc;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(30, 58, 95, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #c9a227, #d4a574);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #d4b43a, #e0b584);
+}
+
+/* 聚光灯效果 */
+.spotlight {
+  position: relative;
+  overflow: hidden;
+}
+
+.spotlight::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(201, 162, 39, 0.15) 0%,
+    transparent 60%
+  );
+  pointer-events: none;
+}
+
+/* 木质纹理 */
+.wood-texture {
+  background: 
+    linear-gradient(90deg, rgba(139, 90, 43, 0.1) 1px, transparent 1px),
+    linear-gradient(rgba(139, 90, 43, 0.1) 1px, transparent 1px),
+    linear-gradient(135deg, #8b5a2b 0%, #d4a574 50%, #8b5a2b 100%);
+  background-size: 20px 20px, 20px 20px, 100% 100%;
+}
+
+/* 卡片悬停效果 */
+.debater-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.debater-card:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+.debater-card.selected {
+  box-shadow: 0 0 0 3px #c9a227, 0 20px 40px rgba(201, 162, 39, 0.3);
+}
+
+/* 聊天气泡 */
+.chat-bubble {
+  position: relative;
+  padding: 1rem 1.5rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(30, 58, 95, 0.9), rgba(30, 58, 95, 0.7));
+  border: 1px solid rgba(201, 162, 39, 0.3);
+}
+
+.chat-bubble::before {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 24px;
+  width: 16px;
+  height: 16px;
+  background: inherit;
+  border-right: 1px solid rgba(201, 162, 39, 0.3);
+  border-bottom: 1px solid rgba(201, 162, 39, 0.3);
+  transform: rotate(45deg);
+}
+
+.chat-bubble.user {
+  background: linear-gradient(135deg, rgba(201, 162, 39, 0.2), rgba(201, 162, 39, 0.1));
+}
+
+/* 按钮样式 */
+.btn-primary {
+  background: linear-gradient(135deg, #c9a227, #d4a574);
+  color: #0f172a;
+  font-weight: 600;
+  padding: 0.75rem 2rem;
+  border-radius: 0.5rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(201, 162, 39, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(201, 162, 39, 0.4);
+}
+
+.btn-secondary {
+  background: rgba(30, 58, 95, 0.5);
+  color: #e8f4f8;
+  font-weight: 500;
+  padding: 0.75rem 2rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(201, 162, 39, 0.3);
+  transition: all 0.3s ease;
+}
+
+.btn-secondary:hover {
+  background: rgba(30, 58, 95, 0.7);
+  border-color: #c9a227;
+}
+
+/* 输入框样式 */
+.input-field {
+  background: rgba(15, 23, 42, 0.6);
+  border: 2px solid rgba(201, 162, 39, 0.3);
+  border-radius: 0.75rem;
+  padding: 1rem 1.5rem;
+  color: #f8fafc;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+  width: 100%;
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: #c9a227;
+  box-shadow: 0 0 20px rgba(201, 162, 39, 0.2);
+}
+
+.input-field::placeholder {
+  color: rgba(248, 250, 252, 0.5);
+}
+
+/* 动画 */
+@keyframes typing {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.typing-indicator {
+  animation: typing 1.5s ease-in-out infinite;
+}
+
+/* 头像光环 */
+.avatar-glow {
+  box-shadow: 0 0 20px rgba(201, 162, 39, 0.4);
+}
+
+.avatar-glow.speaking {
+  animation: glow 1.5s ease-in-out infinite alternate;
+}

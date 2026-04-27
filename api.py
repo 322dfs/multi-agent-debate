@@ -1,21 +1,28 @@
 from datetime import datetime
+import io
 import json
 import os
 from pathlib import Path
 import uuid
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from docx import Document
+from pypdf import PdfReader
 
 BASE_DIR = Path(__file__).parent
 AGENTS_DIR = BASE_DIR / "agents"
 APP_DATA_DIR = Path(os.getenv("DEBATE_APP_DATA_DIR", Path.home() / ".multi-agent-debate-v2"))
 RESULTS_DIR = APP_DATA_DIR / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+RESUME_DIR = APP_DATA_DIR / "resumes"
+RESUME_DIR.mkdir(parents=True, exist_ok=True)
+RESUME_EVAL_DIR = APP_DATA_DIR / "resume_evaluations"
+RESUME_EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
 MODEL_NAME = os.getenv("DEBATE_MODEL", "deepseek-chat")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1")
@@ -33,6 +40,80 @@ app.add_middleware(
 )
 
 debate_sessions: Dict[str, Dict[str, Any]] = {}
+
+POSITION_PROFILES: Dict[str, Dict[str, Any]] = {
+    "embedded_software_engineer": {
+        "id": "embedded_software_engineer",
+        "title": "嵌入式软件工程师 Embedded Software Engineer",
+        "company": "上海孛璞半导体技术有限公司",
+        "must_have": [
+            "C/C++ 扎实基础",
+            "嵌入式 Linux 或 RTOS 开发经验",
+            "驱动/固件调试能力",
+            "良好工程实践（版本控制、测试、文档）",
+        ],
+        "plus": [
+            "半导体/光模块/高速通信相关经验",
+            "Python 自动化测试经验",
+            "跨团队协作与问题定位能力",
+        ],
+    },
+    "chip_test_engineer": {
+        "id": "chip_test_engineer",
+        "title": "芯片测试工程师 Chip Test Engineer",
+        "company": "上海孛璞半导体技术有限公司",
+        "must_have": [
+            "测试方案设计与执行能力",
+            "数据分析与问题定位能力",
+            "电子/通信/微电子基础扎实",
+            "测试自动化意识（脚本或工具链）",
+        ],
+        "plus": [
+            "ATE 或实验室测试平台经验",
+            "硅光/光模块测试经验",
+            "与设计/工艺联合调试经验",
+        ],
+    },
+    "silicon_photonics_engineer": {
+        "id": "silicon_photonics_engineer",
+        "title": "硅光芯片工程师 Silicon Photonics Engineer",
+        "company": "上海孛璞半导体技术有限公司",
+        "must_have": [
+            "光电子/微电子相关理论基础",
+            "器件或版图/工艺理解能力",
+            "建模、仿真或实验验证经验",
+            "科研与工程落地结合能力",
+        ],
+        "plus": [
+            "硅光、CPO、光互联相关项目经验",
+            "跨学科协作能力（光学、电学、封装）",
+            "论文/专利/竞赛成果",
+        ],
+    },
+}
+
+RESUME_REVIEWERS: List[Dict[str, str]] = [
+    {
+        "id": "hiring_manager",
+        "name": "招聘经理 Hiring Manager",
+        "focus": "岗位匹配度、可胜任性、入职风险",
+    },
+    {
+        "id": "tech_interviewer",
+        "name": "技术面试官 Technical Interviewer",
+        "focus": "技术深度、项目真实性、工程能力",
+    },
+    {
+        "id": "business_reviewer",
+        "name": "业务负责人 Business Reviewer",
+        "focus": "业务理解、成长潜力、协作与执行",
+    },
+    {
+        "id": "hrbp",
+        "name": "HRBP",
+        "focus": "稳定性、沟通能力、文化适配与薪资预期风险",
+    },
+]
 
 
 class DebateStartRequest(BaseModel):
@@ -149,6 +230,102 @@ def llm_chat(messages: List[Dict[str, str]], temperature: float = 0.7) -> str:
         temperature=temperature,
     )
     return response.choices[0].message.content or ""
+
+
+def parse_json_object(raw_text: str) -> Dict[str, Any]:
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError:
+        start = raw_text.find("{")
+        end = raw_text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(raw_text[start : end + 1])
+    raise HTTPException(status_code=500, detail="模型返回格式解析失败，请重试。")
+
+
+def extract_resume_text(filename: str, file_bytes: bytes) -> str:
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".pdf":
+        reader = PdfReader(io.BytesIO(file_bytes))
+        text_parts = [(page.extract_text() or "") for page in reader.pages]
+        content = "\n".join(text_parts).strip()
+        if not content:
+            raise HTTPException(status_code=400, detail="PDF 未提取到可读文本，请尝试可复制文本版本。")
+        return content
+    if suffix == ".docx":
+        doc = Document(io.BytesIO(file_bytes))
+        content = "\n".join([p.text for p in doc.paragraphs]).strip()
+        if not content:
+            raise HTTPException(status_code=400, detail="Word 未提取到可读文本，请检查文档内容。")
+        return content
+    if suffix in {".txt", ".md"}:
+        return file_bytes.decode("utf-8", errors="ignore").strip()
+    if suffix == ".doc":
+        raise HTTPException(status_code=400, detail="暂不支持 .doc，请转为 .docx 或 PDF 后上传。")
+    raise HTTPException(status_code=400, detail="仅支持 PDF / DOCX / TXT / MD 文件。")
+
+
+def generate_resume_review(
+    *,
+    reviewer: Dict[str, str],
+    position: Dict[str, Any],
+    resume_text: str,
+) -> Dict[str, Any]:
+    prompt = f"""你是{reviewer['name']}，正在评估候选人是否适合岗位。
+
+公司：{position['company']}
+岗位：{position['title']}
+岗位必备能力：
+{chr(10).join([f"- {x}" for x in position['must_have']])}
+岗位加分项：
+{chr(10).join([f"- {x}" for x in position['plus']])}
+
+评审关注点：{reviewer['focus']}
+
+候选人简历文本：
+{resume_text[:9000]}
+
+请只输出 JSON（不要额外文本）：
+{{
+  "score": 0-100,
+  "decision": "强烈推荐/推荐/有条件推荐/不推荐",
+  "summary": "80-150字结论",
+  "strengths": ["亮点1","亮点2","亮点3"],
+  "risks": ["风险1","风险2"],
+  "missing": ["缺失能力1","缺失能力2"],
+  "questions": ["面试追问1","面试追问2"],
+  "advice": ["改进建议1","改进建议2"]
+}}
+"""
+    raw = llm_chat(
+        [
+            {"role": "system", "content": "你是半导体行业招聘评审专家，输出必须是 JSON。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
+    )
+    return parse_json_object(raw)
+
+
+def aggregate_resume_reviews(reviews: List[Dict[str, Any]], position: Dict[str, Any]) -> Dict[str, Any]:
+    score_values = [int(r.get("result", {}).get("score", 0)) for r in reviews]
+    avg_score = round(sum(score_values) / max(1, len(score_values)), 1)
+    recommendations = [r.get("result", {}).get("decision", "") for r in reviews]
+    final_decision = "推荐"
+    if avg_score >= 80:
+        final_decision = "强烈推荐"
+    elif avg_score < 60:
+        final_decision = "不推荐"
+    elif avg_score < 70:
+        final_decision = "有条件推荐"
+
+    return {
+        "position": position,
+        "average_score": avg_score,
+        "final_decision": final_decision,
+        "reviewer_decisions": recommendations,
+        "updated_at": now_iso(),
+    }
 
 
 def format_recent_context(session: Dict[str, Any], max_items: int = 16) -> str:
@@ -352,6 +529,93 @@ def execute_full_round(session: Dict[str, Any]) -> Dict[str, Any]:
 @app.get("/api/debaters")
 def get_debaters():
     return {"debaters": load_debaters()}
+
+
+@app.get("/api/recruit/positions")
+def list_recruit_positions():
+    return {"positions": list(POSITION_PROFILES.values())}
+
+
+@app.post("/api/recruit/evaluate")
+async def evaluate_resume(
+    position_id: str = Form(...),
+    resume_file: UploadFile = File(...),
+):
+    if position_id not in POSITION_PROFILES:
+        raise HTTPException(status_code=400, detail="无效的岗位 ID。")
+
+    file_bytes = await resume_file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="上传文件为空。")
+
+    raw_filename = resume_file.filename or f"resume_{uuid.uuid4().hex}.bin"
+    saved_filename = f"{uuid.uuid4().hex}_{Path(raw_filename).name}"
+    saved_path = RESUME_DIR / saved_filename
+    saved_path.write_bytes(file_bytes)
+
+    resume_text = extract_resume_text(raw_filename, file_bytes)
+    position = POSITION_PROFILES[position_id]
+
+    review_items = []
+    for reviewer in RESUME_REVIEWERS:
+        result = generate_resume_review(
+            reviewer=reviewer,
+            position=position,
+            resume_text=resume_text,
+        )
+        review_items.append(
+            {
+                "reviewer": reviewer,
+                "result": result,
+                "timestamp": now_iso(),
+            }
+        )
+
+    summary = aggregate_resume_reviews(review_items, position)
+    eval_id = str(uuid.uuid4())
+    payload = {
+        "evaluation_id": eval_id,
+        "created_at": now_iso(),
+        "resume_file": {
+            "original_name": raw_filename,
+            "saved_path": str(saved_path),
+        },
+        "position_id": position_id,
+        "position": position,
+        "reviews": review_items,
+        "summary": summary,
+    }
+    with (RESUME_EVAL_DIR / f"{eval_id}.json").open("w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    return payload
+
+
+@app.get("/api/recruit/evaluations")
+def list_resume_evaluations():
+    items = []
+    for fp in sorted(RESUME_EVAL_DIR.glob("*.json"), key=os.path.getmtime, reverse=True):
+        with fp.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        items.append(
+            {
+                "evaluation_id": data.get("evaluation_id"),
+                "created_at": data.get("created_at"),
+                "position": data.get("position"),
+                "resume_file": data.get("resume_file", {}).get("original_name"),
+                "summary": data.get("summary", {}),
+            }
+        )
+    return {"evaluations": items}
+
+
+@app.get("/api/recruit/evaluations/{evaluation_id}")
+def get_resume_evaluation(evaluation_id: str):
+    fp = RESUME_EVAL_DIR / f"{evaluation_id}.json"
+    if not fp.exists():
+        raise HTTPException(status_code=404, detail="未找到该评审记录。")
+    with fp.open("r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 @app.post("/api/debate/start")

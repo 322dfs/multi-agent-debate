@@ -3,6 +3,7 @@ import TopicInput from './components/TopicInput'
 import DebaterSelection from './components/DebaterSelection'
 import DebateArena from './components/DebateArena'
 import ExamplePage from './components/ExamplePage'
+import ResumeEvaluation from './components/ResumeEvaluation'
 
 function App() {
     const [step, setStep] = useState(0)
@@ -37,6 +38,10 @@ function App() {
         setStep(0)
     }
 
+    const handleResumeMode = () => {
+        setStep(5)
+    }
+
     return (
         <div className="min-h-screen font-sans">
             {step === 0 && (
@@ -66,6 +71,13 @@ function App() {
                                     <span className="text-2xl">📚</span>
                                     查看系统示例
                                 </button>
+                                <button
+                                    onClick={handleResumeMode}
+                                    className="w-full bg-gradient-to-r from-purple to-blue text-white py-4 rounded-2xl hover:opacity-90 transition-all shadow-glow font-medium text-lg flex items-center justify-center gap-3 transform hover:scale-105"
+                                >
+                                    <span className="text-2xl">📄</span>
+                                    简历评审模式
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -84,6 +96,7 @@ function App() {
             {step === 2 && <DebaterSelection topic={topic} onNext={handleDebatersNext} />}
             {step === 3 && <DebateArena topic={topic} debaters={debaters} onReset={handleReset} />}
             {step === 4 && <ExamplePage onBack={handleBackFromExample} />}
+            {step === 5 && <ResumeEvaluation onBack={handleBackFromExample} />}
         </div>
     )
 }

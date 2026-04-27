@@ -1,35 +1,47 @@
-"""
-FastAPI后端 - 为前端提供API服务
-"""
-
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional
-import json
-import asyncio
-from pathlib import Path
 from datetime import datetime
-from main import DebateSession, get_client, load_agent_config, list_debater_agents, call_debater, call_moderator, call_judge
+import json
+import os
+from pathlib import Path
+import uuid
+from typing import Any, Dict, List
 
-app = FastAPI(title="辩论竞技场 API", version="1.0.0")
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from openai import OpenAI
+from pydantic import BaseModel
+from dotenv import load_dotenv
 
-# 启用CORS
+BASE_DIR = Path(__file__).parent
+AGENTS_DIR = BASE_DIR / "agents"
+APP_DATA_DIR = Path(os.getenv("DEBATE_APP_DATA_DIR", Path.home() / ".multi-agent-debate-v2"))
+RESULTS_DIR = APP_DATA_DIR / "results"
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+MODEL_NAME = os.getenv("DEBATE_MODEL", "deepseek-chat")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1")
+
+load_dotenv()
+
+app = FastAPI(title="Multi Agent Debate API", version="2.0.0")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3002", "http://localhost:3000", "http://localhost:3001"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 存储活跃的辩论会话
-active_sessions = {}
+debate_sessions: Dict[str, Dict[str, Any]] = {}
 
 
-class DebateRequest(BaseModel):
+class DebateStartRequest(BaseModel):
     topic: str
-    debaters: List[str]
+    debaters: list[str]
+
+
+class DebateRoundRequest(BaseModel):
+    session_id: str
 
 
 class UserMessageRequest(BaseModel):
@@ -37,305 +49,503 @@ class UserMessageRequest(BaseModel):
     message: str
 
 
-class DebateResponse(BaseModel):
+class NextRoundRequest(BaseModel):
     session_id: str
-    message: dict
 
 
-@app.get("/api/debaters")
-async def get_debaters():
-    """获取所有可用的辩手列表"""
-    debaters = list_debater_agents()
-    result = []
-    for debater_id in debaters:
-        try:
-            config = load_agent_config(debater_id)
-            result.append({
-                "id": debater_id,
-                "name": debater_id,
-                "role": config["identity"]["role"],
-                "description": config.get("description", ""),
-                "avatar": get_avatar_for_debater(debater_id),
-                "color": get_color_for_debater(debater_id),
-            })
-        except Exception as e:
-            print(f"Error loading {debater_id}: {e}")
+class ModerateRequest(BaseModel):
+    session_id: str
+
+
+class JudgeRequest(BaseModel):
+    session_id: str
+
+
+class DecisionRequest(BaseModel):
+    session_id: str
+    decision: str
+    user_conclusion: str | None = None
+
+
+class AutoDebateRequest(BaseModel):
+    session_id: str
+    max_rounds: int = 3
+
+
+def now_iso() -> str:
+    return datetime.now().isoformat()
+
+
+def get_api_key() -> str:
+    api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="缺少 DEEPSEEK_API_KEY 或 OPENAI_API_KEY，无法生成真实辩论内容。",
+        )
+    return api_key
+
+
+def get_client() -> OpenAI:
+    return OpenAI(api_key=get_api_key(), base_url=LLM_BASE_URL)
+
+
+def session_file(session_id: str) -> Path:
+    return RESULTS_DIR / f"session_{session_id}.json"
+
+
+def persist_session(session: Dict[str, Any]) -> None:
+    session["updated_at"] = now_iso()
+    with session_file(session["session_id"]).open("w", encoding="utf-8") as f:
+        json.dump(session, f, ensure_ascii=False, indent=2)
+
+
+def load_agent_config(agent_name: str) -> Dict[str, Any]:
+    config_path = AGENTS_DIR / f"{agent_name}.json"
+    if not config_path.exists():
+        raise HTTPException(status_code=400, detail=f"找不到辩手配置: {agent_name}")
+    with config_path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_debaters() -> list[Dict[str, str]]:
+    excluded_agents = {"debate_moderator", "final_judge"}
+    results = []
+    for filepath in sorted(AGENTS_DIR.glob("*.json")):
+        agent_id = filepath.stem
+        if agent_id in excluded_agents:
+            continue
+        with filepath.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        results.append(
+            {
+                "id": data.get("name", agent_id),
+                "name": data.get("display_name", data.get("name", agent_id)),
+                "display_name": data.get("display_name", data.get("name", agent_id)),
+                "role": data.get("identity", {}).get("role", "辩手"),
+                "description": data.get("description", ""),
+            }
+        )
+    return results
+
+
+def get_session_or_404(session_id: str) -> Dict[str, Any]:
+    if session_id in debate_sessions:
+        return debate_sessions[session_id]
+    file_path = session_file(session_id)
+    if file_path.exists():
+        with file_path.open("r", encoding="utf-8") as f:
+            session = json.load(f)
+        debate_sessions[session_id] = session
+        return session
+    raise HTTPException(status_code=404, detail="Session not found")
+
+
+def llm_chat(messages: List[Dict[str, str]], temperature: float = 0.7) -> str:
+    client = get_client()
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=messages,
+        temperature=temperature,
+    )
+    return response.choices[0].message.content or ""
+
+
+def format_recent_context(session: Dict[str, Any], max_items: int = 16) -> str:
+    recent = session["messages"][-max_items:]
+    if not recent:
+        return "暂无历史发言，这是开场轮次。"
+    lines = []
+    for item in recent:
+        lines.append(
+            f"[第{item['round']}轮][{item['speaker']}][{item['type']}]: {item['content']}"
+        )
+    return "\n".join(lines)
+
+
+def append_message(
+    session: Dict[str, Any],
+    *,
+    speaker: str,
+    content: str,
+    message_type: str,
+    round_number: int,
+    meta: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    item = {
+        "speaker": speaker,
+        "content": content,
+        "type": message_type,
+        "round": round_number,
+        "timestamp": now_iso(),
+        "meta": meta or {},
+    }
+    session["messages"].append(item)
+    return item
+
+
+def generate_debater_message(
+    session: Dict[str, Any], agent_name: str, round_number: int
+) -> str:
+    config = load_agent_config(agent_name)
+    prompt = f"""你将扮演以下角色参与辩论，必须严格保持人设、认知、表达风格：
+
+角色名：{config.get("display_name", config.get("name", agent_name))}
+角色身份：{config.get("identity", {}).get("role", "辩手")}
+关键经历：{config.get("identity", {}).get("experience", "")}
+背景：{config.get("identity", {}).get("background", "")}
+思维方式：{config.get("cognitive_style", {}).get("thinking", "")}
+评估标准：{config.get("cognitive_style", {}).get("evaluation_criteria", "")}
+优势：{"；".join(config.get("strengths", []))}
+盲点：{"；".join(config.get("blind_spots", []))}
+核心信念：{"；".join(config.get("core_beliefs", []))}
+辩论风格：{config.get("debate_style", "")}
+说话风格：{config.get("speech_pattern", "")}
+
+辩题：{session["topic"]}
+当前轮次：第{round_number}轮
+最近上下文：
+{format_recent_context(session)}
+
+要求：
+1. 观点真实、细节具体，不说空话；
+2. 对他人观点进行点对点回应；
+3. 保持该身份的认知偏好和语言风格；
+4. 输出 180-320 字，直接输出发言正文。
+"""
+    return llm_chat(
+        [
+            {"role": "system", "content": "你是严谨的多方辩论参与者。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.8,
+    )
+
+
+def generate_moderator_summary(session: Dict[str, Any], round_number: int) -> str:
+    moderator = load_agent_config("debate_moderator")
+    prompt = f"""你是{moderator['identity']['role']}。请总结第{round_number}轮辩论。
+
+辩题：{session["topic"]}
+最近发言：
+{format_recent_context(session)}
+
+请输出：
+1) 各方核心观点（按人分点）
+2) 当前最关键冲突
+3) 下一轮必须回答的问题（2-3条）
+控制在 220 字以内。
+"""
+    return llm_chat(
+        [
+            {"role": "system", "content": "你是中立主持人，擅长抽取冲突焦点。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.4,
+    )
+
+
+def parse_judge_json(raw_text: str) -> Dict[str, Any]:
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError:
+        start = raw_text.find("{")
+        end = raw_text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(raw_text[start : end + 1])
+    raise HTTPException(status_code=500, detail="裁判输出解析失败，请重试。")
+
+
+def generate_judge_result(session: Dict[str, Any], round_number: int) -> Dict[str, Any]:
+    judge = load_agent_config("final_judge")
+    prompt = f"""你是{judge['identity']['role']}，请基于当前辩论给出阶段裁决。
+
+辩题：{session["topic"]}
+最近发言：
+{format_recent_context(session)}
+
+必须仅输出 JSON，不允许额外文本，结构如下：
+{{
+  "consensus": ["共识1", "共识2"],
+  "disagreements": ["分歧1", "分歧2"],
+  "proposed_conclusion": "当前最优结论（具体可执行）",
+  "confidence": 0-100 的整数,
+  "continue_debate": true/false,
+  "reasoning": "裁判理由，80-160字"
+}}
+
+判定规则：
+- 若关键分歧仍未闭环，continue_debate=true
+- 只有在证据链完整、冲突基本收敛时，continue_debate=false
+"""
+    raw = llm_chat(
+        [
+            {"role": "system", "content": "你是严谨裁判，输出必须是 JSON。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.2,
+    )
+    result = parse_judge_json(raw)
+    result["round"] = round_number
+    result["timestamp"] = now_iso()
     return result
 
 
-def get_avatar_for_debater(debater_id: str) -> str:
-    """为辩手分配emoji头像"""
-    avatars = {
-        "subencai": "🎓",
-        "zhangxuefeng": "🎤",
-        "counselor": "🤝",
-        "hr_evaluator": "💼",
-        "investor": "💰",
-        "product_manager": "📱",
-        "senior_engineer": "💻",
+def execute_full_round(session: Dict[str, Any]) -> Dict[str, Any]:
+    if session["status"] == "completed":
+        raise HTTPException(status_code=400, detail="该辩题已结束")
+
+    round_number = session["round"]
+    new_messages = []
+
+    for agent_name in session["debaters"]:
+        content = generate_debater_message(session, agent_name, round_number)
+        message = append_message(
+            session,
+            speaker=agent_name,
+            content=content,
+            message_type="debater",
+            round_number=round_number,
+        )
+        new_messages.append(message)
+
+    summary = generate_moderator_summary(session, round_number)
+    summary_message = append_message(
+        session,
+        speaker="主持人",
+        content=summary,
+        message_type="moderator_summary",
+        round_number=round_number,
+    )
+    new_messages.append(summary_message)
+    session["summaries"].append(
+        {"round": round_number, "content": summary, "timestamp": summary_message["timestamp"]}
+    )
+
+    judgment = generate_judge_result(session, round_number)
+    judge_message = append_message(
+        session,
+        speaker="裁判",
+        content=judgment["proposed_conclusion"],
+        message_type="judge",
+        round_number=round_number,
+        meta=judgment,
+    )
+    new_messages.append(judge_message)
+    session["judgments"].append(judgment)
+    session["latest_judgment"] = judgment
+    session["status"] = (
+        "awaiting_user_judgment"
+        if (not judgment.get("continue_debate", True) and int(judgment.get("confidence", 0)) >= 70)
+        else "ongoing"
+    )
+    persist_session(session)
+    return {
+        "round": round_number,
+        "messages": new_messages,
+        "summary": summary,
+        "judgment": judgment,
+        "status": session["status"],
     }
-    return avatars.get(debater_id, "🤖")
 
 
-def get_color_for_debater(debater_id: str) -> str:
-    """为辩手分配颜色"""
-    colors = {
-        "subencai": "from-blue-500 to-cyan-400",
-        "zhangxuefeng": "from-red-500 to-orange-400",
-        "counselor": "from-green-500 to-emerald-400",
-        "hr_evaluator": "from-purple-500 to-violet-400",
-        "investor": "from-yellow-500 to-amber-400",
-        "product_manager": "from-pink-500 to-rose-400",
-        "senior_engineer": "from-indigo-500 to-blue-400",
-    }
-    return colors.get(debater_id, "from-gray-500 to-gray-400")
+@app.get("/api/debaters")
+def get_debaters():
+    return {"debaters": load_debaters()}
 
 
 @app.post("/api/debate/start")
-async def start_debate(request: DebateRequest):
-    """开始一场新的辩论"""
-    import uuid
+def start_debate(request: DebateStartRequest):
+    if not request.topic.strip():
+        raise HTTPException(status_code=400, detail="辩题不能为空")
+    if len(request.debaters) < 2:
+        raise HTTPException(status_code=400, detail="至少选择 2 位辩手")
+
     session_id = str(uuid.uuid4())
-    
-    session = DebateSession(request.topic, request.debaters)
-    active_sessions[session_id] = session
-    
-    return {
+    session = {
         "session_id": session_id,
-        "topic": request.topic,
+        "topic": request.topic.strip(),
         "debaters": request.debaters,
         "round": 1,
+        "status": "ongoing",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "messages": [],
+        "summaries": [],
+        "judgments": [],
+        "latest_judgment": None,
+        "final_conclusion": None,
+        "user_decisions": [],
     }
-
-
-class SessionRequest(BaseModel):
-    session_id: str
+    debate_sessions[session_id] = session
+    persist_session(session)
+    return {
+        "session_id": session_id,
+        "created_at": session["created_at"],
+        "status": session["status"],
+    }
 
 
 @app.post("/api/debate/round")
-async def run_debate_round(request: SessionRequest):
-    """运行一轮辩论"""
-    session_id = request.session_id
-    if session_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    session = active_sessions[session_id]
-    client = get_client()
-    
-    messages = []
-    
-    # 检查是否需要生成摘要
-    if session.should_generate_summary():
-        summary = session.generate_summary(client)
-        messages.append({
-            "type": "summary",
-            "content": summary,
-            "round": session.round_num,
-        })
-    
-    # 辩手发言
-    for debater_id in session.debaters:
-        config = load_agent_config(debater_id)
-        context = session.get_context_for_debater(debater_id)
-        
-        result = call_debater(client, debater_id, session.topic, context, session.round_num)
-        
-        message = {
-            "id": len(session.conversation_history),
-            "speaker": debater_id,
-            "speaker_name": config["identity"]["role"],
-            "text": result,
-            "type": "debater",
-            "round": session.round_num,
-            "timestamp": datetime.now().isoformat(),
-        }
-        
-        session.add_message(config["identity"]["role"], result, "debater")
-        messages.append(message)
-    
-    return {
-        "session_id": session_id,
-        "messages": messages,
-        "round": session.round_num,
-    }
-
-
-@app.post("/api/debate/moderate")
-async def moderate_debate(request: SessionRequest):
-    """主持人总结"""
-    session_id = request.session_id
-    if session_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    session = active_sessions[session_id]
-    client = get_client()
-    
-    moderator_result = call_moderator(client, session)
-    
-    return {
-        "session_id": session_id,
-        "message": {
-            "speaker": "moderator",
-            "speaker_name": "主持人",
-            "text": moderator_result,
-            "type": "moderator",
-            "round": session.round_num,
-        }
-    }
-
-
-@app.post("/api/debate/judge")
-async def judge_debate(request: SessionRequest):
-    """裁判裁决"""
-    session_id = request.session_id
-    if session_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    session = active_sessions[session_id]
-    client = get_client()
-    
-    judge_result = call_judge(client, session)
-    
-    # 保存结果
-    result_file = save_session_result(session, judge_result)
-    
-    return {
-        "session_id": session_id,
-        "message": {
-            "speaker": "judge",
-            "speaker_name": "裁判",
-            "text": judge_result,
-            "type": "judge",
-            "round": session.round_num,
-        },
-        "result_file": str(result_file),
-    }
-
-
-@app.post("/api/debate/user-message")
-async def user_message(request: UserMessageRequest):
-    """用户发言"""
-    session_id = request.session_id
-    if session_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    session = active_sessions[session_id]
-    session.add_message("用户", request.message, "user")
-    
-    # 辩手回应
-    client = get_client()
-    messages = []
-    
-    for debater_id in session.debaters:
-        config = load_agent_config(debater_id)
-        context = session.get_context_for_debater(debater_id)
-        
-        result = call_debater(client, debater_id, session.topic, context, session.round_num)
-        
-        message = {
-            "id": len(session.conversation_history),
-            "speaker": debater_id,
-            "speaker_name": config["identity"]["role"],
-            "text": result,
-            "type": "debater",
-            "round": session.round_num,
-        }
-        
-        session.add_message(config["identity"]["role"], result, "debater")
-        messages.append(message)
-    
-    return {
-        "session_id": session_id,
-        "messages": messages,
-    }
+def run_round(request: DebateRoundRequest):
+    session = get_session_or_404(request.session_id)
+    return execute_full_round(session)
 
 
 @app.post("/api/debate/next-round")
-async def next_round(request: SessionRequest):
-    """进入下一轮"""
-    session_id = request.session_id
-    if session_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    session = active_sessions[session_id]
-    session.next_round()
-    
+def next_round(request: NextRoundRequest):
+    session = get_session_or_404(request.session_id)
+    if session["status"] == "completed":
+        raise HTTPException(status_code=400, detail="该辩题已结束")
+    session["round"] += 1
+    persist_session(session)
+    return {"round": session["round"], "status": session["status"]}
+
+
+@app.post("/api/debate/moderate")
+def moderate(request: ModerateRequest):
+    session = get_session_or_404(request.session_id)
+    if not session["summaries"]:
+        summary = generate_moderator_summary(session, session["round"])
+        return {"summary": summary}
+    return {"summary": session["summaries"][-1]["content"]}
+
+
+@app.post("/api/debate/judge")
+def judge(request: JudgeRequest):
+    session = get_session_or_404(request.session_id)
+    if not session["judgments"]:
+        result = generate_judge_result(session, session["round"])
+        return {"judgment": result["proposed_conclusion"], "detail": result}
+    latest = session["judgments"][-1]
+    return {"judgment": latest["proposed_conclusion"], "detail": latest}
+
+
+@app.post("/api/debate/user-message")
+def user_message(request: UserMessageRequest):
+    session = get_session_or_404(request.session_id)
+    if session["status"] == "completed":
+        raise HTTPException(status_code=400, detail="该辩题已结束")
+
+    append_message(
+        session,
+        speaker="用户",
+        content=request.message,
+        message_type="user_message",
+        round_number=session["round"],
+    )
+    responses = []
+    for agent_name in session["debaters"]:
+        content = generate_debater_message(session, agent_name, session["round"])
+        item = append_message(
+            session,
+            speaker=agent_name,
+            content=content,
+            message_type="debater_response",
+            round_number=session["round"],
+        )
+        responses.append(item)
+    persist_session(session)
+    return {"responses": responses, "round": session["round"], "status": session["status"]}
+
+
+@app.post("/api/debate/decision")
+def debate_decision(request: DecisionRequest):
+    session = get_session_or_404(request.session_id)
+    decision = request.decision.strip().lower()
+    if decision not in {"accept", "reject"}:
+        raise HTTPException(status_code=400, detail="decision 只能是 accept 或 reject")
+
+    decision_record = {
+        "decision": decision,
+        "user_conclusion": request.user_conclusion or "",
+        "timestamp": now_iso(),
+        "round": session["round"],
+    }
+    session["user_decisions"].append(decision_record)
+
+    if decision == "accept":
+        session["status"] = "completed"
+        session["final_conclusion"] = (
+            request.user_conclusion
+            or (session.get("latest_judgment") or {}).get("proposed_conclusion")
+            or "用户接受当前结论。"
+        )
+        append_message(
+            session,
+            speaker="用户裁决",
+            content=f"我接受当前结论。最终结论：{session['final_conclusion']}",
+            message_type="user_decision_accept",
+            round_number=session["round"],
+        )
+    else:
+        session["status"] = "ongoing"
+        user_note = request.user_conclusion or "我否认当前结论，请继续辩论并补充证据。"
+        append_message(
+            session,
+            speaker="用户裁决",
+            content=user_note,
+            message_type="user_decision_reject",
+            round_number=session["round"],
+        )
+        session["round"] += 1
+
+    persist_session(session)
     return {
-        "session_id": session_id,
-        "round": session.round_num,
+        "status": session["status"],
+        "round": session["round"],
+        "final_conclusion": session["final_conclusion"],
+    }
+
+
+@app.post("/api/debate/auto-debate")
+def auto_debate(request: AutoDebateRequest):
+    session = get_session_or_404(request.session_id)
+    rounds_run = 0
+    collected = []
+    max_rounds = max(1, min(request.max_rounds, 10))
+    while rounds_run < max_rounds and session["status"] == "ongoing":
+        result = execute_full_round(session)
+        collected.append(result)
+        rounds_run += 1
+        if session["status"] == "ongoing":
+            session["round"] += 1
+            persist_session(session)
+    return {
+        "executed_rounds": rounds_run,
+        "status": session["status"],
+        "results": collected,
+        "latest_judgment": session.get("latest_judgment"),
     }
 
 
 @app.get("/api/debate/history/{session_id}")
-async def get_history(session_id: str):
-    """获取辩论历史"""
-    if session_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    session = active_sessions[session_id]
-    
-    return {
-        "session_id": session_id,
-        "topic": session.topic,
-        "round": session.round_num,
-        "debaters": session.debaters,
-        "conversation_history": session.conversation_history,
-        "summaries": session.summaries,
-    }
+def get_history(session_id: str):
+    return get_session_or_404(session_id)
 
 
-from datetime import datetime
-
-def save_session_result(session: DebateSession, judge_result: str):
-    """保存辩论结果"""
-    output_dir = Path(__file__).parent / "results"
-    output_dir.mkdir(exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    result_file = output_dir / f"api_debate_result_{timestamp}.json"
-    
-    result = {
-        "topic": session.topic,
-        "timestamp": datetime.now().isoformat(),
-        "round": session.round_num,
-        "debaters": session.debaters,
-        "conversation_history": session.conversation_history,
-        "summaries": session.summaries,
-        "judge": judge_result,
-    }
-    
-    with open(result_file, 'w', encoding='utf-8') as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
-    
-    return result_file
-
-
-# WebSocket支持实时通信
-@app.websocket("/ws/debate/{session_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str):
-    await websocket.accept()
-    
-    if session_id not in active_sessions:
-        await websocket.send_json({"error": "Session not found"})
-        await websocket.close()
-        return
-    
-    try:
-        while True:
-            data = await websocket.receive_json()
-            action = data.get("action")
-            
-            if action == "user_message":
-                # 处理用户消息并广播回应
-                pass
-            elif action == "next_round":
-                # 进入下一轮
-                pass
-            
-            await websocket.send_json({"status": "ok"})
-    except WebSocketDisconnect:
-        print(f"WebSocket disconnected: {session_id}")
+@app.get("/api/debate/sessions")
+def list_sessions():
+    items = []
+    for file_path in sorted(RESULTS_DIR.glob("session_*.json"), key=os.path.getmtime, reverse=True):
+        with file_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        items.append(
+            {
+                "session_id": data.get("session_id"),
+                "topic": data.get("topic"),
+                "status": data.get("status"),
+                "round": data.get("round"),
+                "created_at": data.get("created_at"),
+                "updated_at": data.get("updated_at"),
+                "debaters": data.get("debaters", []),
+                "final_conclusion": data.get("final_conclusion"),
+            }
+        )
+    return {"sessions": items}
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

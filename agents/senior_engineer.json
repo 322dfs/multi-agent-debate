@@ -1,7 +1,7 @@
 {
   "name": "senior_engineer",
   "version": "1.0.0",
-  "description": "资深程序员视角，评估subencai-skills方法论的可执行性",
+  "description": "资深程序员视角，评估Grassroots-Riser Toolkit方法论的可执行性",
   "identity": {
     "role": "大厂资深工程师/技术面试官",
     "experience": "8年开发经验，带过多个从0到1的项目",
@@ -31,5 +31,6 @@
     "这个方法论能否真正落地执行？",
     "有没有具体的工具和模板支撑？",
     "如何验证学习效果？"
-  ]
+  ],
+  "display_name": "资深工程师 Senior Engineer"
 }

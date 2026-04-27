@@ -9,12 +9,17 @@ function DebaterSelection({ topic, onNext }) {
     useEffect(() => {
         const fetchDebaters = async () => {
             try {
-                const response = await axios.get('http://localhost:8000/api/debaters')
+                const response = await axios.get('/api/debaters')
                 setDebaters(response.data.debaters)
             } catch (error) {
                 console.error('Error fetching debaters:', error)
                 // 使用默认辩手列表作为备用
-                setDebaters(['subencai', 'zhangxuefeng', '程序员', '产品经理'])
+                setDebaters([
+                    {id: 'phoenix_riser', name: '底层逆袭者 Phoenix Riser', role: '底层逆袭者 / Grassroots Riser', description: '从低谷逆袭并拿到腾讯与字节跳动等大厂 offer 的成长型辩手'},
+                    {id: 'zhangxuefeng', name: '教育实用导师 Zhang Xuefeng', role: '教育选择专家/实用主义导师', description: '考研名师、高考志愿填报专家'},
+                    {id: 'programmer', name: '程序员', role: '辩手', description: '程序员代表'},
+                    {id: 'product-manager', name: '产品经理', role: '辩手', description: '产品经理代表'}
+                ])
             } finally {
                 setIsLoading(false)
             }
@@ -24,8 +29,8 @@ function DebaterSelection({ topic, onNext }) {
 
     const toggleDebater = (debater) => {
         setSelectedDebaters(prev => {
-            if (prev.includes(debater)) {
-                return prev.filter(d => d !== debater)
+            if (prev.some(d => d.id === debater.id)) {
+                return prev.filter(d => d.id !== debater.id)
             } else {
                 return [...prev, debater]
             }
@@ -35,7 +40,8 @@ function DebaterSelection({ topic, onNext }) {
     const handleSubmit = (e) => {
         e.preventDefault()
         if (selectedDebaters.length >= 2) {
-            onNext(selectedDebaters)
+            const debaterIds = selectedDebaters.map(d => d.id)
+            onNext(debaterIds)
         } else {
             alert('请至少选择2位辩手')
         }
@@ -43,7 +49,7 @@ function DebaterSelection({ topic, onNext }) {
 
     // 角色图标映射
     const roleIcons = {
-        'subencai': '👨‍💼',
+        'phoenix_riser': '🔥',
         'zhangxuefeng': '🎓',
         '程序员': '💻',
         '产品经理': '📱'
@@ -51,10 +57,20 @@ function DebaterSelection({ topic, onNext }) {
 
     // 角色颜色映射
     const roleColors = {
-        'subencai': 'from-primary to-pink',
+        'phoenix_riser': 'from-primary to-pink',
         'zhangxuefeng': 'from-secondary to-blue',
         '程序员': 'from-purple to-blue',
         '产品经理': 'from-accent to-warning'
+    }
+
+    // 获取辩手的图标
+    const getDebaterIcon = (debater) => {
+        return roleIcons[debater.id] || roleIcons[debater.name] || '👤'
+    }
+
+    // 获取辩手的颜色
+    const getDebaterColor = (debater) => {
+        return roleColors[debater.id] || roleColors[debater.name] || 'from-primary to-pink'
     }
 
     return (
@@ -80,22 +96,26 @@ function DebaterSelection({ topic, onNext }) {
                     ) : (
                         <form onSubmit={handleSubmit} className="space-y-8">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {debaters.map((debater, index) => (
-                                    <button
-                                        key={index}
-                                        type="button"
-                                        onClick={() => toggleDebater(debater)}
-                                        className={`flex items-center gap-4 p-6 rounded-2xl transition-all ${selectedDebaters.includes(debater) ? `bg-gradient-to-r ${roleColors[debater] || 'from-primary to-pink'} text-white shadow-glow-primary transform scale-105` : 'bg-gray-50 border-2 border-gray-200 hover:bg-gray-100'}`}
-                                    >
-                                        <div className="w-16 h-16 rounded-full flex items-center justify-center bg-white/30 text-2xl">
-                                            {roleIcons[debater] || '👤'}
-                                        </div>
-                                        <div>
-                                            <h3 className="font-medium text-xl">{debater}</h3>
-                                            <p className="text-sm text-gray-500">点击选择</p>
-                                        </div>
-                                    </button>
-                                ))}
+                                {debaters.map((debater, index) => {
+                                    const isSelected = selectedDebaters.some(d => d.id === debater.id)
+                                    return (
+                                        <button
+                                            key={debater.id || index}
+                                            type="button"
+                                            onClick={() => toggleDebater(debater)}
+                                            className={`flex items-center gap-4 p-6 rounded-2xl transition-all text-left ${isSelected ? `bg-gradient-to-r ${getDebaterColor(debater)} text-white shadow-glow-primary transform scale-105` : 'bg-gray-50 border-2 border-gray-200 hover:bg-gray-100'}`}
+                                        >
+                                            <div className="w-16 h-16 rounded-full flex items-center justify-center bg-white/30 text-2xl">
+                                                {getDebaterIcon(debater)}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <h3 className="font-medium text-xl">{debater.name}</h3>
+                                                <p className={`text-sm font-medium ${isSelected ? 'text-white/90' : 'text-gray-600'}`}>{debater.role}</p>
+                                                <p className={`text-sm mt-1 line-clamp-2 ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>{debater.description}</p>
+                                            </div>
+                                        </button>
+                                    )
+                                })}
                             </div>
                             
                             <div className="flex justify-between items-center">

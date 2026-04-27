@@ -32,5 +32,6 @@
     "disagreements": "核心分歧点",
     "final_verdict": "最终裁决及理由",
     "actionable_advice": "可执行的建议"
-  }
+  },
+  "display_name": "最终裁判 Final Judge"
 }

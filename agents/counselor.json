@@ -1,7 +1,7 @@
 {
   "name": "counselor",
   "version": "1.0.0",
-  "description": "大学辅导员视角，评估subencai-skills对困境学生的帮助",
+  "description": "大学辅导员视角，评估Grassroots-Riser Toolkit对困境学生的帮助",
   "identity": {
     "role": "大学辅导员/心理咨询师",
     "experience": "8年高校学生工作经验，处理过大量学业危机、心理辅导案例",
@@ -31,5 +31,6 @@
     "对学业崩溃学生的实际帮助有多大？",
     "方法是否足够温和，不会造成二次伤害？",
     "能否被高校心理健康中心采纳使用？"
-  ]
+  ],
+  "display_name": "辅导员咨询师 Counselor"
 }

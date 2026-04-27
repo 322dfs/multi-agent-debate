@@ -2,6 +2,12 @@ import React, { useState } from 'react'
 
 function TopicInput({ onNext }) {
     const [topic, setTopic] = useState('')
+    const exampleTopics = [
+        'AI 会取代程序员吗？',
+        '年轻人应该先就业还是先读研？',
+        '高学历是否仍然是普通家庭最优解？',
+        '个人品牌比硬技能更重要吗？'
+    ]
 
     const handleSubmit = (e) => {
         e.preventDefault()
@@ -18,7 +24,7 @@ function TopicInput({ onNext }) {
                         <span className="text-primary text-5xl">🎯</span>
                         智能辩论系统
                     </h1>
-                    <p className="text-gray-600 text-lg">输入辩论题目，开始精彩的辩论之旅</p>
+                    <p className="text-gray-600 text-lg">输入辩题后进入辩手选择，至少选择 2 位辩手即可开始</p>
                 </div>
                 
                 <form onSubmit={handleSubmit} className="space-y-8">
@@ -34,6 +40,22 @@ function TopicInput({ onNext }) {
                             className="w-full px-6 py-4 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-primary/30 transition-all text-lg"
                             required
                         />
+                        <p className="mt-2 text-sm text-gray-500">建议使用明确、可辩驳的话题，效果会更好。</p>
+                        <div className="mt-4">
+                            <p className="mb-2 text-sm font-medium text-gray-700">快速示例：</p>
+                            <div className="flex flex-wrap gap-2">
+                                {exampleTopics.map((item) => (
+                                    <button
+                                        key={item}
+                                        type="button"
+                                        onClick={() => setTopic(item)}
+                                        className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 transition hover:bg-gray-200"
+                                    >
+                                        {item}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                     
                     <button

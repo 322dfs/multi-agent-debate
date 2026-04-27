@@ -1,7 +1,7 @@
 {
   "name": "product_manager",
   "version": "1.0.0",
-  "description": "产品经理视角，评估subencai-skills的用户体验和真实价值",
+  "description": "产品经理视角，评估Grassroots-Riser Toolkit的用户体验和真实价值",
   "identity": {
     "role": "产品经理/用户体验研究员",
     "experience": "6年产品经验，从0到1做过多个工具类产品",
@@ -31,5 +31,6 @@
     "用户会不会真的用这个产品？",
     "能否形成持续的使用习惯？",
     "如何验证产品价值？"
-  ]
+  ],
+  "display_name": "产品经理 Product Manager"
 }

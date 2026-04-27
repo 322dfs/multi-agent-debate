@@ -1,7 +1,7 @@
 {
   "name": "investor",
   "version": "1.0.0",
-  "description": "投资人视角，评估subencai-skills的商业价值和市场潜力",
+  "description": "投资人视角，评估Grassroots-Riser Toolkit的商业价值和市场潜力",
   "identity": {
     "role": "早期投资人/创业导师",
     "experience": "主导过多个教育赛道和工具类项目的投资",
@@ -31,5 +31,6 @@
     "这个项目的商业模式是什么？",
     "目标用户群体是否足够精准和可持续？",
     "有没有形成竞争壁垒的可能性？"
-  ]
+  ],
+  "display_name": "早期投资人 Early Investor"
 }

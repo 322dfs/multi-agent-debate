@@ -10,7 +10,7 @@ function ExamplePage({ onBack }) {
             timestamp: '10:00:00'
         },
         {
-            speaker: 'subencai',
+            speaker: 'phoenix_riser',
             content: '我认为AI不会完全取代程序员，因为编程不仅仅是写代码，还需要创造力和解决问题的能力。',
             round: 1,
             timestamp: '10:01:30'
@@ -37,7 +37,7 @@ function ExamplePage({ onBack }) {
 
     // 角色图标映射
     const roleIcons = {
-        'subencai': '👨‍💼',
+        'phoenix_riser': '🔥',
         'zhangxuefeng': '🎓',
         '主持人': '🎭',
         '裁判': '⚖️',
@@ -46,7 +46,7 @@ function ExamplePage({ onBack }) {
 
     // 角色颜色映射
     const roleColors = {
-        'subencai': 'bg-gradient-to-r from-primary to-pink text-white',
+        'phoenix_riser': 'bg-gradient-to-r from-primary to-pink text-white',
         'zhangxuefeng': 'bg-gradient-to-r from-secondary to-blue text-white',
         '主持人': 'bg-gradient-to-r from-accent to-warning text-dark',
         '裁判': 'bg-gradient-to-r from-info to-blue text-white',
@@ -55,11 +55,19 @@ function ExamplePage({ onBack }) {
 
     // 角色发光效果
     const roleGlows = {
-        'subencai': 'shadow-glow-primary',
+        'phoenix_riser': 'shadow-glow-primary',
         'zhangxuefeng': 'shadow-glow-secondary',
         '主持人': 'shadow-glow-accent',
         '裁判': 'shadow-glow',
         '用户': 'shadow-glow-secondary'
+    }
+
+    const displayNames = {
+        phoenix_riser: '底层逆袭者 Phoenix Riser',
+        zhangxuefeng: '教育实用导师 Zhang Xuefeng',
+        主持人: '主持人',
+        裁判: '裁判',
+        用户: '用户'
     }
 
     return (
@@ -115,12 +123,12 @@ function ExamplePage({ onBack }) {
                         </div>
                         <div className="flex flex-wrap gap-3 justify-center">
                             <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-primary to-pink text-white shadow-glow-primary">
-                                <span className="text-xl">👨‍💼</span>
-                                <span className="font-medium">subencai</span>
+                                <span className="text-xl">🔥</span>
+                                <span className="font-medium">底层逆袭者 Phoenix Riser</span>
                             </div>
                             <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-secondary to-blue text-white shadow-glow-secondary">
                                 <span className="text-xl">🎓</span>
-                                <span className="font-medium">zhangxuefeng</span>
+                                <span className="font-medium">教育实用导师 Zhang Xuefeng</span>
                             </div>
                         </div>
                     </div>
@@ -135,7 +143,7 @@ function ExamplePage({ onBack }) {
                                     </div>
                                     <div className="flex-1">
                                         <div className="flex items-center gap-3 mb-2">
-                                            <span className="font-semibold text-dark text-lg">{msg.speaker}</span>
+                                            <span className="font-semibold text-dark text-lg">{displayNames[msg.speaker] || msg.speaker}</span>
                                             <span className="text-xs text-gray-500">{msg.timestamp}</span>
                                         </div>
                                         <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">

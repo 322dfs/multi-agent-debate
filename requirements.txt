@@ -1,9 +1,5 @@
-crewai>=0.80.0
-langchain>=0.3.0
-langchain-openai>=0.2.0
-langchain-deepseek>=0.1.0
-python-dotenv>=1.0.0
-openai>=1.0.0
-fastapi>=0.104.0
-uvicorn>=0.24.0
-websockets>=12.0
+fastapi
+uvicorn
+pydantic
+python-dotenv
+openai

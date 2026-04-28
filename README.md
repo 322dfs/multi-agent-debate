@@ -132,6 +132,7 @@ docker compose down
 
 - 本机构建镜像 -> 导出 tar -> 传服务器 -> `docker load` -> 离线 compose 启动
 - 适配 `192.168.108.150` 的新手手册见：`DEPLOY_OFFLINE_150.md`
+- 日常操作（启停、巡检、排障）见：`OPERATIONS_MANUAL_150.md`
 
 ---
 

@@ -326,6 +326,10 @@ function ResumeEvaluation({ onBack }) {
                 </div>
               ) : null}
               <label className="block text-sm font-medium text-gray-700">上传简历（支持拖拽 PDF / DOCX）</label>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-800">
+                隐私说明：简历解析与评审在你本机环境处理，不会上传到第三方服务平台。
+                若仅想临时查看文本，请使用“仅解析简历（先看内容）”；如点击“开始评审”，会在本机保存评审历史，便于后续回看。
+              </div>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -381,6 +385,9 @@ function ResumeEvaluation({ onBack }) {
                 >
                   <p className="line-clamp-1 font-medium text-gray-700">{item.position?.title}</p>
                   <p className="mt-1 text-gray-500">{item.resume_file}</p>
+                  <p className="text-gray-500">
+                    字符数：{item.char_count || 0} · 行数：{item.line_count || 0}
+                  </p>
                   <p className="text-gray-500">{formatDateTime(item.created_at)}</p>
                 </button>
               ))}
@@ -416,6 +423,16 @@ function ResumeEvaluation({ onBack }) {
                   <p className="mt-1 text-sm text-gray-700">
                     最终结论：{evaluation.summary?.final_decision} · 平均分：{evaluation.summary?.average_score}
                   </p>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-sm font-semibold text-dark">历史简历原文</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    字符数：{evaluation.char_count || 0} · 行数：{evaluation.line_count || 0}
+                  </p>
+                  <pre className="mt-2 whitespace-pre-wrap text-xs leading-6 text-gray-700">
+                    {evaluation.parsed_text || '该历史记录创建时未保存简历文本（旧版本数据）。'}
+                  </pre>
                 </div>
 
                 <div className="mt-4 space-y-3">

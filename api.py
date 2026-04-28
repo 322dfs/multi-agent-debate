@@ -3,6 +3,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import uuid
 from typing import Any, Dict, List
 
@@ -14,9 +15,9 @@ from dotenv import load_dotenv
 from docx import Document
 from pypdf import PdfReader
 
-load_dotenv()
-
 BASE_DIR = Path(__file__).parent
+# 固定从项目目录加载 .env，避免因启动 cwd 不同导致读不到 key
+load_dotenv(BASE_DIR / ".env")
 AGENTS_DIR = BASE_DIR / "agents"
 APP_DATA_DIR = Path(os.getenv("DEBATE_APP_DATA_DIR", Path.home() / ".multi-agent-debate-v2"))
 RESULTS_DIR = APP_DATA_DIR / "results"
@@ -41,6 +42,27 @@ app.add_middleware(
 )
 
 debate_sessions: Dict[str, Dict[str, Any]] = {}
+
+AGENT_SCENARIOS: Dict[str, str] = {
+    "it_ops_manager": "it",
+    "platform_engineer": "it",
+    "security_engineer": "it",
+    "qa_test_engineer": "it",
+    "it_project_manager": "it",
+    "senior_engineer": "it",
+    "product_manager": "it",
+    "hr_evaluator": "career",
+    "zhangxuefeng": "career",
+    "investor": "business",
+    "small_business_owner": "business",
+    "lawyer_public_policy": "governance",
+    "civil_servant": "governance",
+    "doctor_public_health": "society",
+    "journalist_observer": "society",
+    "factory_worker": "society",
+    "counselor": "society",
+    "phoenix_riser": "career",
+}
 
 POSITION_PROFILES: Dict[str, Dict[str, Any]] = {
     "embedded_software_engineer": {
@@ -197,7 +219,7 @@ RESUME_REVIEWERS: List[Dict[str, str]] = [
 
 class DebateStartRequest(BaseModel):
     topic: str
-    debaters: list[str]
+    debaters: List[str] = []
 
 
 class DebateRoundRequest(BaseModel):
@@ -225,6 +247,12 @@ class DecisionRequest(BaseModel):
     session_id: str
     decision: str
     user_conclusion: str | None = None
+
+
+class ExecutionStatusRequest(BaseModel):
+    session_id: str
+    status: str
+    note: str | None = None
 
 
 class AutoDebateRequest(BaseModel):
@@ -292,9 +320,204 @@ def load_debaters() -> list[Dict[str, str]]:
                 "display_name": data.get("display_name", data.get("name", agent_id)),
                 "role": data.get("identity", {}).get("role", "辩手"),
                 "description": data.get("description", ""),
+                "scenario": AGENT_SCENARIOS.get(agent_id, "general"),
             }
         )
     return results
+
+
+DEBATER_TOPIC_HINTS: Dict[str, List[str]] = {
+    "counselor": ["心理", "情绪", "焦虑", "抑郁", "辅导", "学生", "校园", "成长", "家庭", "教育"],
+    "zhangxuefeng": ["高考", "考研", "志愿", "升学", "专业", "学历", "院校", "教育", "就业"],
+    "senior_engineer": ["程序", "开发", "工程", "系统", "算法", "代码", "架构", "技术", "ai", "人工智能", "it", "运维", "上线", "故障", "服务器"],
+    "product_manager": ["产品", "用户", "需求", "体验", "增长", "运营", "商业化", "市场", "it系统", "内部工具", "流程优化"],
+    "hr_evaluator": ["面试", "简历", "招聘", "求职", "薪资", "职场", "人力", "hr", "offer"],
+    "investor": ["投资", "创业", "融资", "估值", "赛道", "商业", "利润", "市场", "公司"],
+    "phoenix_riser": ["逆袭", "底层", "普通人", "奋斗", "自我提升", "转型", "翻身", "成长"],
+    "lawyer_public_policy": ["法律", "合规", "监管", "政策", "权益", "公平", "劳动法", "合同", "司法"],
+    "factory_worker": ["工厂", "制造", "产线", "蓝领", "工时", "加班", "安全生产", "一线", "车间"],
+    "small_business_owner": ["个体户", "门店", "创业", "现金流", "成本", "利润", "经营", "小微企业"],
+    "doctor_public_health": ["医疗", "健康", "公共卫生", "医院", "疾病", "防疫", "心理健康", "慢病"],
+    "journalist_observer": ["媒体", "舆论", "新闻", "真相", "信息", "传播", "公信力", "调查"],
+    "civil_servant": ["政府", "治理", "公共服务", "民生", "政策执行", "基层", "行政", "社会稳定"],
+    "it_ops_manager": ["it运维", "运维", "值班", "故障", "恢复", "监控", "告警", "稳定性", "变更窗口", "sla", "mttr"],
+    "platform_engineer": ["devops", "ci", "cd", "流水线", "发布", "自动化", "容器", "部署", "配置管理", "灰度发布"],
+    "security_engineer": ["安全", "漏洞", "权限", "审计", "合规", "最小权限", "零信任", "风险控制", "攻防", "数据安全"],
+    "qa_test_engineer": ["测试", "回归", "质量", "验收", "用例", "测试覆盖", "发布质量", "质量门禁", "qa"],
+    "it_project_manager": ["项目管理", "里程碑", "排期", "交付", "owner", "deadline", "协同", "资源", "优先级"],
+}
+
+
+IT_DECISION_HINTS: List[str] = [
+    "it", "it部门", "运维", "服务台", "工单", "网络", "权限", "账号", "vpn",
+    "监控", "告警", "日志", "服务器", "故障", "上线", "发布", "内网", "邮件系统",
+]
+
+
+def is_it_decision_topic(topic: str) -> bool:
+    text = (topic or "").strip().lower()
+    return any(x in text for x in IT_DECISION_HINTS)
+
+
+def recommend_debaters_for_topic(
+    topic: str,
+    min_count: int = 3,
+    preferred_scenario: str | None = None,
+) -> List[Dict[str, Any]]:
+    debaters = load_debaters()
+    topic_text = (topic or "").strip().lower()
+    it_mode = is_it_decision_topic(topic_text)
+    scenario_mode = (preferred_scenario or "").strip().lower()
+    if scenario_mode in {"", "all"}:
+        scenario_mode = ""
+    it_agents = {"it_ops_manager", "platform_engineer", "security_engineer", "qa_test_engineer", "it_project_manager", "senior_engineer", "product_manager"}
+    scenario_agents = {aid for aid, sc in AGENT_SCENARIOS.items() if sc == scenario_mode} if scenario_mode else set()
+    if not debaters:
+        return []
+
+    scored: List[Dict[str, Any]] = []
+    for item in debaters:
+        debater_id = item.get("id", "")
+        keywords = DEBATER_TOPIC_HINTS.get(debater_id, [])
+        role_text = " ".join(
+            [
+                item.get("name", ""),
+                item.get("display_name", ""),
+                item.get("role", ""),
+                item.get("description", ""),
+            ]
+        ).lower()
+        score = 0
+        for kw in keywords:
+            kw_l = kw.lower()
+            if kw_l and kw_l in topic_text:
+                score += 4
+            if kw_l and kw_l in role_text:
+                score += 1
+        if it_mode:
+            if debater_id in it_agents:
+                score += 8
+            else:
+                score -= 3
+        if scenario_agents:
+            if debater_id in scenario_agents:
+                score += 6
+            else:
+                score -= 2
+        # 无关键词命中时，使用角色文本与主题做基础相似兜底
+        if not keywords and topic_text and any(ch in role_text for ch in topic_text[:8]):
+            score += 1
+        scored.append(
+            {
+                **item,
+                "match_score": score,
+                "match_reason": "关键词匹配" if score > 0 else "通用辩手兜底",
+            }
+        )
+
+    scored.sort(key=lambda x: x.get("match_score", 0), reverse=True)
+    if it_mode:
+        it_ranked = [x for x in scored if x.get("id") in it_agents]
+        selected = [x for x in it_ranked if x.get("match_score", 0) >= 0][: max(min_count, 3)]
+    elif scenario_agents:
+        scenario_ranked = [x for x in scored if x.get("id") in scenario_agents]
+        selected = [x for x in scenario_ranked if x.get("match_score", 0) >= 0][: max(min_count, 3)]
+    else:
+        selected = [x for x in scored if x.get("match_score", 0) > 0][: max(min_count, 3)]
+
+    if len(selected) < min_count:
+        selected_ids = {x.get("id") for x in selected}
+        pool = scored
+        if it_mode:
+            pool = [x for x in scored if x.get("id") in it_agents] + [x for x in scored if x.get("id") not in it_agents]
+        elif scenario_agents:
+            # 场景模式下严格限制为同场景，不再引入跨场景辩手
+            pool = [x for x in scored if x.get("id") in scenario_agents]
+        for item in pool:
+            if item.get("id") not in selected_ids:
+                selected.append(item)
+            if len(selected) >= min_count:
+                break
+
+    return selected[:4]
+
+
+def llm_recommend_debaters(
+    *,
+    topic: str,
+    candidates: List[Dict[str, Any]],
+    preferred_scenario: str,
+    min_count: int,
+) -> List[Dict[str, str]]:
+    if not candidates:
+        return []
+    candidate_lines = []
+    for c in candidates:
+        candidate_lines.append(
+            f"- id={c.get('id')} | name={c.get('name')} | role={c.get('role')} | scenario={c.get('scenario')} | desc={c.get('description')}"
+        )
+    prompt = f"""你是企业决策系统中的“辩手选择器”。
+
+任务：根据辩题与场景，从候选辩手中选择最合适的 {min_count} 位辩手。
+
+辩题：{topic}
+场景偏好：{preferred_scenario or "all"}
+
+候选辩手：
+{chr(10).join(candidate_lines)}
+
+要求：
+1) 只从候选列表中选，不允许虚构 id；
+2) 优先匹配场景，其次匹配专业角色；
+3) 选择数量至少 {min_count} 个；
+4) 输出必须是 JSON：
+{{
+  "selected": [
+    {{"id":"id1","reason":"为什么选他，1句话"}},
+    {{"id":"id2","reason":"为什么选他，1句话"}}
+  ],
+  "reason": "一句话说明选择逻辑"
+}}
+"""
+    raw = llm_chat(
+        [
+            {"role": "system", "content": "你是精准的角色匹配助手，输出必须是 JSON。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.1,
+    )
+    selected_items: List[Dict[str, str]] = []
+    try:
+        data = parse_json_object(raw)
+        items = data.get("selected", [])
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict) and isinstance(item.get("id"), str):
+                    selected_items.append(
+                        {
+                            "id": item.get("id"),
+                            "reason": (item.get("reason") or "").strip(),
+                        }
+                    )
+    except Exception:
+        # 模型偶尔不按 JSON 输出，兜底从原文抓取 id
+        pass
+
+    if not selected_items:
+        id_pattern = r"[a-z][a-z0-9_]{2,40}"
+        candidates_in_text = re.findall(id_pattern, raw.lower())
+        selected_items = [{"id": x, "reason": ""} for x in candidates_in_text]
+
+    valid_ids = {c.get("id") for c in candidates}
+    cleaned = [x for x in selected_items if isinstance(x.get("id"), str) and x.get("id") in valid_ids]
+    deduped = []
+    seen = set()
+    for x in cleaned:
+        xid = x.get("id")
+        if xid not in seen:
+            deduped.append({"id": xid, "reason": x.get("reason", "")})
+            seen.add(xid)
+    return deduped
 
 
 def get_session_or_404(session_id: str) -> Dict[str, Any]:
@@ -497,6 +720,27 @@ def generate_debater_message(
     session: Dict[str, Any], agent_name: str, round_number: int
 ) -> str:
     config = load_agent_config(agent_name)
+    other_debaters = [x for x in session["debaters"] if x != agent_name]
+    participant_line = "、".join(other_debaters) if other_debaters else "无"
+    prior_round_speakers = [
+        x.get("speaker")
+        for x in session.get("messages", [])
+        if x.get("round") == round_number and x.get("type") == "debater" and x.get("speaker")
+    ]
+    is_first_debater_this_round = len(prior_round_speakers) == 0
+    interaction_instruction = """
+2. 本轮你是首位发言辩手：禁止写“回应某某上一条观点”，因为本轮尚无人先发言；
+3. 你可以主动点名其他辩手并提出追问或预判分歧，但不要伪造“对方已经说过”的内容；
+4. 若要回应用户，只能作为部分内容，不能超过全文 40%；
+""" if is_first_debater_this_round else """
+2. 本轮必须至少点名回应 1 位其他辩手（可使用“@辩手ID”或“回应某某”），禁止整段只对用户说话；
+3. 若要回应用户，只能作为部分内容，不能超过全文 40%；
+"""
+    it_mode = is_it_decision_topic(session.get("topic", ""))
+    it_mode_instruction = """
+8. 当前是 IT 部门决策场景：请优先给出可执行方案，包含：负责人角色、完成时限、上线/变更风险、回滚或兜底预案。
+9. 如涉及系统变更，请明确“先小范围试点再全量”的策略，以及至少 1 条可量化验收指标（例如：故障恢复时长、告警误报率、交付时长）。
+""" if it_mode else ""
     prompt = f"""你将扮演以下角色参与辩论，必须严格保持人设、认知、表达风格：
 
 角色名：{config.get("display_name", config.get("name", agent_name))}
@@ -513,14 +757,33 @@ def generate_debater_message(
 
 辩题：{session["topic"]}
 当前轮次：第{round_number}轮
+当前发言人：{agent_name}
+其他辩手：{participant_line}
+可互动对象：其他辩手 + 用户
 最近上下文：
 {format_recent_context(session)}
 
 要求：
-1. 观点真实、细节具体，不说空话；
-2. 对他人观点进行点对点回应；
-3. 保持该身份的认知偏好和语言风格；
-4. 输出 180-320 字，直接输出发言正文。
+1. 你是独立辩手，不是用户专属助手；可以与任意辩手对话、质疑、支持或补充；
+{interaction_instruction}
+5. 允许出现“与某辩手同立场但理由不同”或“与其对立”的表达，体现真实立场互动；
+6. 观点真实、细节具体，不说空话；保持该身份的认知偏好和语言风格；
+7. 人物表达要像真实职场角色：优先给出岗位职责边界、资源约束、失败代价，不要“鸡汤式鼓励”；
+8. 如果引用数据，使用“约/大约/通常范围”表达，避免编造精确且无法验证的数字；
+9. 输出必须是 Markdown，使用下面结构（标题名称可微调，但必须保留分段与列表）：
+## 立场
+- 用 1-2 句给出本轮立场
+
+## 交锋回应
+- @某辩手：回应点 1
+- @某辩手：回应点 2
+
+## 我的补充
+- 证据/案例/推演 1
+- 可执行建议或风险提醒 1
+
+10. 输出 180-320 字，直接输出 Markdown 正文，不要输出“说明”或代码块围栏。
+{it_mode_instruction}
 """
     return llm_chat(
         [
@@ -567,6 +830,19 @@ def parse_judge_json(raw_text: str) -> Dict[str, Any]:
 
 def generate_judge_result(session: Dict[str, Any], round_number: int) -> Dict[str, Any]:
     judge = load_agent_config("final_judge")
+    it_mode = is_it_decision_topic(session.get("topic", ""))
+    it_mode_json_schema = """
+  "decision_type": "go/no_go/pilot_first",
+  "owner": "建议负责人角色（如：运维负责人）",
+  "deadline": "建议完成时限（如：48小时内）",
+  "rollback_plan": "若方案失败的回滚/兜底策略",
+  "acceptance_metrics": ["指标1","指标2"],
+  "next_actions": ["行动1","行动2","行动3"],
+""" if it_mode else ""
+    it_mode_rules = """
+- 当前是 IT 部门决策场景：必须给出 owner、deadline、rollback_plan、acceptance_metrics。
+- 优先给出“小范围试点”方案，再决定是否全量。
+""" if it_mode else ""
     prompt = f"""你是{judge['identity']['role']}，请基于当前辩论给出阶段裁决。
 
 辩题：{session["topic"]}
@@ -580,12 +856,14 @@ def generate_judge_result(session: Dict[str, Any], round_number: int) -> Dict[st
   "proposed_conclusion": "当前最优结论（具体可执行）",
   "confidence": 0-100 的整数,
   "continue_debate": true/false,
-  "reasoning": "裁判理由，80-160字"
+  "reasoning": "裁判理由，80-160字",
+{it_mode_json_schema}
 }}
 
 判定规则：
 - 若关键分歧仍未闭环，continue_debate=true
 - 只有在证据链完整、冲突基本收敛时，continue_debate=false
+{it_mode_rules}
 """
     raw = llm_chat(
         [
@@ -658,9 +936,95 @@ def execute_full_round(session: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+@app.get("/")
+def api_root():
+    return {
+        "name": "Multi Agent Debate API",
+        "status": "ok",
+        "docs": "/docs",
+        "health": "/api/health",
+    }
+
+
+@app.get("/api/health")
+def api_health():
+    return {"status": "ok", "time": now_iso()}
+
+
 @app.get("/api/debaters")
 def get_debaters():
     return {"debaters": load_debaters()}
+
+
+@app.get("/api/debaters/recommend")
+def recommend_debaters(topic: str = "", scenario: str = ""):
+    scenario_mode = (scenario or "").strip().lower()
+    strict_scenario = scenario_mode not in {"", "all"}
+    rule_picks = recommend_debaters_for_topic(topic=topic, min_count=3, preferred_scenario=scenario_mode or None)
+    picks = rule_picks
+    selector_source = "rule_fallback"
+    selector_reason = "默认规则推荐"
+    llm_error = ""
+    recommendation_items = [
+        {"id": x.get("id"), "source": "rule_fallback", "reason": ""}
+        for x in picks
+    ]
+    try:
+        all_debaters = load_debaters()
+        if strict_scenario:
+            all_debaters = [x for x in all_debaters if x.get("scenario") == scenario_mode]
+        llm_selected_items = llm_recommend_debaters(
+            topic=topic,
+            candidates=all_debaters,
+            preferred_scenario=scenario_mode or "all",
+            min_count=3,
+        )
+        if llm_selected_items:
+            id_map = {x.get("id"): x for x in all_debaters}
+            llm_picks = [id_map[item["id"]] for item in llm_selected_items if item.get("id") in id_map]
+            if len(llm_picks) >= 2:
+                picks = llm_picks[:4]
+                selector_source = "llm"
+                selector_reason = "LLM 根据辩题和场景完成推荐"
+                llm_reason_map = {x.get("id"): x.get("reason", "") for x in llm_selected_items}
+                recommendation_items = [
+                    {"id": x.get("id"), "source": "llm", "reason": llm_reason_map.get(x.get("id"), "")}
+                    for x in picks
+                ]
+            else:
+                selector_source = "rule_fallback"
+                selector_reason = "LLM 返回人数不足，回退规则推荐"
+                recommendation_items = [
+                    {"id": x.get("id"), "source": "rule_fallback", "reason": ""}
+                    for x in picks
+                ]
+        else:
+            selector_source = "rule_fallback"
+            selector_reason = "LLM 未返回有效 ID，回退规则推荐"
+            recommendation_items = [
+                {"id": x.get("id"), "source": "rule_fallback", "reason": ""}
+                for x in picks
+            ]
+    except Exception as e:
+        # LLM 失败时自动回退到规则推荐，确保可用性
+        picks = rule_picks
+        selector_source = "rule_fallback"
+        llm_error = str(e)
+        selector_reason = "LLM 调用失败，使用规则推荐"
+        recommendation_items = [
+            {"id": x.get("id"), "source": "rule_fallback", "reason": ""}
+            for x in picks
+        ]
+    return {
+        "topic": topic,
+        "scenario": scenario or "all",
+        "recommended": picks,
+        "debater_ids": [x.get("id") for x in picks],
+        "recommendation_items": recommendation_items,
+        "selector_source": selector_source,
+        "selector_reason": selector_reason,
+        "llm_error": llm_error,
+    }
 
 
 @app.get("/api/recruit/positions")
@@ -767,6 +1131,7 @@ async def evaluate_resume(
     saved_path.write_bytes(file_bytes)
 
     resume_text = extract_resume_text(raw_filename, file_bytes)
+    resume_lines = [x.strip() for x in resume_text.splitlines() if x.strip()]
     position = selected_position
 
     review_items = []
@@ -795,6 +1160,9 @@ async def evaluate_resume(
         },
         "position_id": selected_position_id,
         "position": position,
+        "parsed_text": resume_text,
+        "char_count": len(resume_text),
+        "line_count": len(resume_lines),
         "reviews": review_items,
         "summary": summary,
     }
@@ -816,6 +1184,9 @@ def list_resume_evaluations():
                 "created_at": data.get("created_at"),
                 "position": data.get("position"),
                 "resume_file": data.get("resume_file", {}).get("original_name"),
+                "char_count": data.get("char_count", 0),
+                "line_count": data.get("line_count", 0),
+                "has_parsed_text": bool(data.get("parsed_text")),
                 "summary": data.get("summary", {}),
             }
         )
@@ -835,14 +1206,18 @@ def get_resume_evaluation(evaluation_id: str):
 def start_debate(request: DebateStartRequest):
     if not request.topic.strip():
         raise HTTPException(status_code=400, detail="辩题不能为空")
-    if len(request.debaters) < 2:
-        raise HTTPException(status_code=400, detail="至少选择 2 位辩手")
+    selected_debaters = request.debaters or []
+    if len(selected_debaters) < 2:
+        auto_picks = recommend_debaters_for_topic(request.topic.strip(), min_count=3)
+        selected_debaters = [x.get("id") for x in auto_picks if x.get("id")]
+    if len(selected_debaters) < 2:
+        raise HTTPException(status_code=400, detail="未能匹配足够辩手，请更换辩题或手动选择。")
 
     session_id = str(uuid.uuid4())
     session = {
         "session_id": session_id,
         "topic": request.topic.strip(),
-        "debaters": request.debaters,
+        "debaters": selected_debaters,
         "round": 1,
         "status": "ongoing",
         "created_at": now_iso(),
@@ -853,6 +1228,8 @@ def start_debate(request: DebateStartRequest):
         "latest_judgment": None,
         "final_conclusion": None,
         "user_decisions": [],
+        "execution_status": "pending",
+        "execution_note": "",
     }
     debate_sessions[session_id] = session
     persist_session(session)
@@ -975,6 +1352,24 @@ def debate_decision(request: DecisionRequest):
     }
 
 
+@app.post("/api/debate/execution-status")
+def update_execution_status(request: ExecutionStatusRequest):
+    session = get_session_or_404(request.session_id)
+    normalized = request.status.strip().lower()
+    allowed = {"pending", "in_progress", "completed", "blocked"}
+    if normalized not in allowed:
+        raise HTTPException(status_code=400, detail="status 只能是 pending/in_progress/completed/blocked")
+    session["execution_status"] = normalized
+    session["execution_note"] = (request.note or "").strip()
+    persist_session(session)
+    return {
+        "session_id": session["session_id"],
+        "execution_status": session["execution_status"],
+        "execution_note": session["execution_note"],
+        "updated_at": session["updated_at"],
+    }
+
+
 @app.post("/api/debate/auto-debate")
 def auto_debate(request: AutoDebateRequest):
     session = get_session_or_404(request.session_id)
@@ -1017,6 +1412,8 @@ def list_sessions():
                 "updated_at": data.get("updated_at"),
                 "debaters": data.get("debaters", []),
                 "final_conclusion": data.get("final_conclusion"),
+                "execution_status": data.get("execution_status", "pending"),
+                "execution_note": data.get("execution_note", ""),
             }
         )
     return {"sessions": items}

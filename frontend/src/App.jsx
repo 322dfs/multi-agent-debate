@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import TopicInput from './components/TopicInput'
 import DebaterSelection from './components/DebaterSelection'
 import DebateArena from './components/DebateArena'
@@ -9,6 +9,33 @@ function App() {
     const [step, setStep] = useState(0)
     const [topic, setTopic] = useState('')
     const [debaters, setDebaters] = useState([])
+    const isPopStateNavigating = useRef(false)
+
+    useEffect(() => {
+        if (!window.history.state || typeof window.history.state.appStep !== 'number') {
+            window.history.replaceState({ appStep: 0 }, '')
+        }
+        const handlePopState = (event) => {
+            const targetStep = event.state?.appStep
+            if (typeof targetStep === 'number') {
+                isPopStateNavigating.current = true
+                setStep(targetStep)
+            }
+        }
+        window.addEventListener('popstate', handlePopState)
+        return () => window.removeEventListener('popstate', handlePopState)
+    }, [])
+
+    useEffect(() => {
+        if (isPopStateNavigating.current) {
+            isPopStateNavigating.current = false
+            return
+        }
+        const current = window.history.state?.appStep
+        if (current !== step) {
+            window.history.pushState({ appStep: step }, '')
+        }
+    }, [step])
 
     const handleStartDebateFlow = () => {
         setStep(1)
@@ -93,8 +120,8 @@ function App() {
                 </div>
             )}
             
-            {step === 1 && <TopicInput onNext={handleTopicNext} />}
-            {step === 2 && <DebaterSelection topic={topic} onNext={handleDebatersNext} />}
+            {step === 1 && <TopicInput onNext={handleTopicNext} onBack={handleReset} />}
+            {step === 2 && <DebaterSelection topic={topic} onNext={handleDebatersNext} onBack={() => setStep(1)} />}
             {step === 3 && <DebateArena topic={topic} debaters={debaters} onReset={handleReset} />}
             {step === 4 && <ExamplePage onBack={handleBackFromExample} />}
             {step === 5 && <ResumeEvaluation onBack={handleBackFromExample} />}

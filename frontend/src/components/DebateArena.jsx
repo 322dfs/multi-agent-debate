@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 function DebateArena({ topic, debaters, onReset }) {
     const initialDebaters = Array.isArray(debaters) ? debaters : []
@@ -18,6 +20,8 @@ function DebateArena({ topic, debaters, onReset }) {
     const [historyPreview, setHistoryPreview] = useState(null)
     const [debaterNameMap, setDebaterNameMap] = useState({})
     const [uiTheme, setUiTheme] = useState('business')
+    const [executionStatus, setExecutionStatus] = useState('pending')
+    const [executionNote, setExecutionNote] = useState('')
     const messagesEndRef = useRef(null)
     const suppressAutoScrollRef = useRef(false)
 
@@ -141,6 +145,8 @@ function DebateArena({ topic, debaters, onReset }) {
             const createdSessionId = response.data.session_id
             setSessionId(createdSessionId)
             setCurrentRound(1)
+            setExecutionStatus('pending')
+            setExecutionNote('')
             setMessages([{
                 speaker: '主持人',
                 content: `辩论开始！辩题：${activeTopic}`,
@@ -303,6 +309,8 @@ function DebateArena({ topic, debaters, onReset }) {
                 ? data.judgments[data.judgments.length - 1]
                 : null
             setLatestJudgment(data.latest_judgment || fallbackJudgment)
+            setExecutionStatus(data.execution_status || 'pending')
+            setExecutionNote(data.execution_note || '')
             setIsDebating(data.status !== 'completed')
             setHistoryPreview({
                 session_id: data.session_id,
@@ -330,6 +338,24 @@ function DebateArena({ topic, debaters, onReset }) {
         if (speaker === '主持人' || speaker === '裁判' || speaker === '用户') return speaker
         if (speaker === '用户裁决') return '最终裁决'
         return `辩手 · ${getSpeakerName(speaker)}`
+    }
+
+    const updateExecutionStatus = async (nextStatus) => {
+        if (!sessionId || isLoading) return
+        try {
+            setIsLoading(true)
+            const resp = await axios.post('/api/debate/execution-status', {
+                session_id: sessionId,
+                status: nextStatus,
+                note: executionNote || '',
+            })
+            setExecutionStatus(resp.data.execution_status || nextStatus)
+            await fetchSessionHistory()
+        } catch (error) {
+            setErrorMessage(error.response?.data?.detail || '更新执行状态失败。')
+        } finally {
+            setIsLoading(false)
+        }
     }
 
     const isBusinessTheme = uiTheme === 'business'
@@ -433,6 +459,7 @@ function DebateArena({ topic, debaters, onReset }) {
                                     <p className="line-clamp-1 font-medium text-gray-700">{item.topic}</p>
                                     <p className="mt-1 text-gray-500">{formatDateTime(item.created_at)}</p>
                                     <p className="text-gray-500">状态：{item.status} · 轮次：{item.round}</p>
+                                    <p className="text-gray-500">执行：{item.execution_status || 'pending'}</p>
                                 </button>
                             ))}
                         </div>
@@ -490,7 +517,19 @@ function DebateArena({ topic, debaters, onReset }) {
                                                 <span className="text-xs text-gray-400">{formatDateTime(msg.timestamp)}</span>
                                             </div>
                                             <div className={`rounded-xl border p-3 text-sm leading-6 shadow-sm md:text-base ${isBusinessTheme ? 'border-slate-200 bg-white text-slate-700' : 'border-fuchsia-100 bg-white/95 text-slate-700'}`}>
-                                                {msg.content}
+                                                <ReactMarkdown
+                                                    remarkPlugins={[remarkGfm]}
+                                                    components={{
+                                                        h2: ({ children }) => <h2 className="mt-2 mb-1 text-base font-semibold">{children}</h2>,
+                                                        p: ({ children }) => <p className="my-1 leading-6">{children}</p>,
+                                                        ul: ({ children }) => <ul className="my-1 list-disc pl-5">{children}</ul>,
+                                                        li: ({ children }) => <li className="my-0.5">{children}</li>,
+                                                        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                                                        blockquote: ({ children }) => <blockquote className="my-2 border-l-4 border-gray-300 pl-3 text-gray-600">{children}</blockquote>,
+                                                    }}
+                                                >
+                                                    {msg.content || ''}
+                                                </ReactMarkdown>
                                             </div>
                                         </div>
                                     </div>
@@ -515,8 +554,21 @@ function DebateArena({ topic, debaters, onReset }) {
                                     置信度：{latestJudgment.confidence} · 是否建议继续辩论：
                                     {latestJudgment.continue_debate ? ' 是' : ' 否'}
                                 </p>
+                                {latestJudgment.owner || latestJudgment.deadline || latestJudgment.rollback_plan ? (
+                                    <div className="mt-3 rounded-xl border border-info/30 bg-white/80 p-3 text-xs text-gray-700">
+                                        <p><span className="font-semibold">决策类型：</span>{latestJudgment.decision_type || '未指定'}</p>
+                                        <p><span className="font-semibold">建议负责人：</span>{latestJudgment.owner || '未指定'}</p>
+                                        <p><span className="font-semibold">建议时限：</span>{latestJudgment.deadline || '未指定'}</p>
+                                        <p><span className="font-semibold">回滚预案：</span>{latestJudgment.rollback_plan || '未指定'}</p>
+                                        {Array.isArray(latestJudgment.acceptance_metrics) && latestJudgment.acceptance_metrics.length > 0 ? (
+                                            <p><span className="font-semibold">验收指标：</span>{latestJudgment.acceptance_metrics.join('；')}</p>
+                                        ) : null}
+                                    </div>
+                                ) : null}
                             </div>
                         ) : null}
+
+                        {/* 执行跟进面板已从主流程隐藏，避免干扰辩论核心体验 */}
 
                         {latestJudgment && !latestJudgment.continue_debate ? (
                             <div className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-3 shadow-sm">

@@ -16,6 +16,17 @@
 - 可保存岗位模板（写一次，后续直接选）
 - 本机独立数据（不会和别人混）
 
+### 界面截图（当前版本）
+
+![项目首页](./images/screenshot-01.png)
+![辩题输入](./images/screenshot-02.png)
+![场景+智能推荐](./images/screenshot-03.png)
+![辩论过程](./images/screenshot-04.png)
+![裁判阶段结论](./images/screenshot-05.png)
+![简历解析与评审](./images/screenshot-06.png)
+![历史评审详情](./images/screenshot-07.png)
+![综合界面](./images/screenshot-08.png)
+
 ---
 
 ## 1. 运行前准备（3 项）
